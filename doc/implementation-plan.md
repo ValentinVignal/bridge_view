@@ -1,415 +1,244 @@
-# Multi-Monitor App Implementation Plan
+# Bridge View Implementation Plan
 
-## Overview
+## Project Overview
 
-Build a screen-sharing solution that turns extra macOS and Android devices into external monitors.
+Create a multi-device display extension system that allows 2 Android phones and an extra MacBook to extend (not mirror) the screen of a main MacBook.
 
----
+**Core Technology Stack:**
 
-## Phase 1: Setup & Protocol (Week 1)
-
-### Start Here: Protocol Project
-
-**Why start with protocol?**
-
-- Defines the contract between server and client
-- Allows parallel development later
-- Ensures type safety from the beginning
-
-### Steps:
-
-#### 1.1 Initialize Protocol Crate
-
-```bash
-cargo new --lib protocol
-cd protocol
-```
-
-#### 1.2 Add Dependencies
-
-```toml
-# protocol/Cargo.toml
-[dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-bincode = "1.3"  # For binary serialization
-```
-
-#### 1.3 Define Core Protocol Messages
-
-Create basic message types:
-
-- Connection handshake
-- Display metadata (resolution, position)
-- Frame data structure
-- Control messages (disconnect, resize)
-
-**Test:** Write unit tests for serialization/deserialization
-
-#### Resources:
-
-- [Serde Documentation](https://serde.rs/)
-- [Rust Book - Testing](https://doc.rust-lang.org/book/ch11-00-testing.html)
+- Server (Main Mac): Rust
+- Client (Mobile & Desktop): Flutter
+- Protocol: Protocol Buffers
+- Transport: WebSocket or QUIC over USB-C networking
 
 ---
 
-## Phase 2: Server - Screen Capture (Week 2-3)
+## Phase 1: Foundation & Protocol (Day 1-2)
 
-### Start: Server Project
+### Step 1.1: Protocol Definition
 
-#### 2.1 Initialize Server
+- [ ] Create `protocol/proto/display.proto`
+- [ ] Define message types:
+  - `ClientRegistration` (client info, device type, capabilities)
+  - `DisplayConfig` (resolution, position, frame rate)
+  - `VideoFrame` (encoded frame data, timestamp, sequence number)
+  - `InputEvent` (mouse, keyboard, touch events with coordinates)
+  - `ControlMessage` (connection management, heartbeat)
+- [ ] Generate Rust code: `protoc --rust_out=server/src/proto`
+- [ ] Generate Dart code: `protoc --dart_out=client/lib/proto`
 
-```bash
-cargo new server
-cd server
-```
+### Step 1.2: Project Structure Setup
 
-#### 2.2 Add Dependencies
-
-```toml
-# server/Cargo.toml
-[dependencies]
-protocol = { path = "../protocol" }
-tokio = { version = "1", features = ["full"] }
-serde_json = "1.0"
-
-# Screen capture (macOS)
-screencapturekit = "0.2"  # macOS native
-# OR
-scrap = "0.5"  # Cross-platform alternative
-
-# Optional: for testing
-image = "0.24"
-```
-
-#### 2.3 Implement Screen Capture Module
-
-**Big Step 1:** Capture a single screenshot and save to file
-
-```rust
-// Test: cargo run should save screenshot.png
-fn capture_screen() -> Result<Vec<u8>, Error> {
-    // Implement screen capture
-}
-```
-
-**Big Step 2:** Continuous screen capture at 30 FPS
-
-**Test:** Print FPS to console, verify smooth capture
-
-#### Resources:
-
-- [ScreenCaptureKit (macOS)](https://developer.apple.com/documentation/screencapturekit)
-- [scrap crate](https://docs.rs/scrap/latest/scrap/)
-- [Tokio Tutorial](https://tokio.rs/tokio/tutorial)
+- [ ] Initialize Rust project: `cargo init server`
+- [ ] Initialize Flutter project: `flutter create client`
+- [ ] Configure multi-platform support for Flutter (Android, macOS)
+- [ ] Add dependencies to `Cargo.toml` and `pubspec.yaml`
+- [ ] Create basic README files for each subproject
 
 ---
 
-## Phase 3: Server - Network/USB Transport (Week 4)
+## Phase 2: Server - Basic Display Capture (Day 3-4)
 
-### Choose Transport Method
+### Step 2.1: Virtual Display Research & POC
 
-#### Option A: Network (Easier to Start)
+- [ ] Research macOS virtual display options:
+  - CoreGraphics display configuration
+  - Third-party drivers (e.g., BetterDisplay API)
+  - CGConfigureDisplayMode for custom resolutions
+- [ ] Create proof-of-concept: detect connected displays
+- [ ] Document virtual display creation approach
 
-```toml
-# server/Cargo.toml
-[dependencies]
-tokio = { version = "1", features = ["net"] }
-```
+### Step 2.2: Screen Capture Implementation
 
-**Big Step 3:** Create TCP server that broadcasts screen data
+- [ ] Implement capture module using `CGDisplayStream`
+- [ ] Capture specific screen regions (virtual display areas)
+- [ ] Convert captured frames to RGB/YUV format
+- [ ] Add frame rate limiting (30 fps initially)
+- [ ] Test capture performance and optimize
 
-```bash
-# Test: Use netcat to receive data
-nc localhost 8080
-```
+### Step 2.3: Basic Encoding
 
-#### Option B: USB (Better Performance)
-
-```toml
-# server/Cargo.toml
-[dependencies]
-rusb = "0.9"  # For USB communication
-```
-
-**Big Step 3:** Detect connected USB devices
-
-**Test:** Print connected device list
-
-#### Resources:
-
-- [Tokio TCP Example](https://tokio.rs/tokio/tutorial/io)
-- [rusb Documentation](https://docs.rs/rusb/latest/rusb/)
-- [libimobiledevice](https://libimobiledevice.org/) (for iOS/macOS USB)
+- [ ] Integrate H.264 encoder (ffmpeg or openh264)
+- [ ] Configure low-latency encoding settings
+- [ ] Implement frame queuing system
+- [ ] Add basic compression quality controls
+- [ ] Benchmark encoding performance
 
 ---
 
-## Phase 4: Server - Complete Integration (Week 5)
+## Phase 3: Server - Network Layer (Day 5)
 
-**Big Step 4:** Combine capture + transport
+### Step 3.1: Connection Manager
 
-Create a server that:
+- [ ] Implement WebSocket server using `tokio-tungstenite`
+- [ ] Add client connection handling
+- [ ] Implement client registration and handshake
+- [ ] Assign display regions to clients
+- [ ] Add connection state management
 
-1. Captures screen at 30 FPS
-2. Encodes frames (JPEG/H.264)
-3. Sends to connected clients
+### Step 3.2: Frame Streaming
 
-```toml
-# Add encoding
-[dependencies]
-mozjpeg = "0.10"  # Fast JPEG encoding
-# OR
-ffmpeg-next = "6.0"  # For H.264
-```
+- [ ] Stream encoded frames to connected clients
+- [ ] Implement frame buffering and queue management
+- [ ] Add frame sequencing and timestamps
+- [ ] Handle client disconnection gracefully
+- [ ] Add basic error handling and logging
 
-**Test:** Stream to VLC player via network
+### Step 3.3: USB-C Network Configuration
 
-```bash
-# VLC can receive raw TCP streams
-vlc tcp://localhost:8080
-```
-
-#### Resources:
-
-- [mozjpeg crate](https://docs.rs/mozjpeg/latest/mozjpeg/)
-- [Video Encoding Guide](https://trac.ffmpeg.org/wiki/Encode/H.264)
+- [ ] Document USB networking setup for macOS
+- [ ] Test connectivity with Android over USB-C
+- [ ] Test connectivity with macOS over USB-C
+- [ ] Configure static IPs or mDNS discovery
 
 ---
 
-## Phase 5: Flutter Client - Basic Display (Week 6-7)
+## Phase 4: Client - Basic Rendering (Day 6-7)
 
-### Initialize Flutter Project
+### Step 4.1: Connection & Protocol
 
-```bash
-flutter create client
-cd client
-```
+- [ ] Implement WebSocket client in Flutter
+- [ ] Parse protobuf messages
+- [ ] Implement client registration flow
+- [ ] Add connection status UI
+- [ ] Handle reconnection logic
 
-#### 5.1 Add Dependencies
+### Step 4.2: Video Decoding & Rendering
 
-```yaml
-# pubspec.yaml
-dependencies:
-  flutter:
-    sdk: flutter
+- [ ] Integrate video player plugin
+- [ ] Decode H.264 stream
+- [ ] Render frames fullscreen
+- [ ] Optimize rendering performance
+- [ ] Add frame rate monitoring
 
-  # For network
-  web_socket_channel: ^2.4.0
+### Step 4.3: Platform-Specific Setup
 
-  # For image display
-  cached_network_image: ^3.3.0
-
-  # Optional: Rust bridge
-  flutter_rust_bridge: ^2.0.0
-```
-
-#### 5.2 Big Step 5: Display Static Image from Server
-
-Create a simple Flutter app that:
-
-1. Connects to server
-2. Receives one frame
-3. Displays it fullscreen
-
-**Test:** See your Mac screen on the Flutter app
-
-#### 5.3 Big Step 6: Continuous Streaming
-
-Implement:
-
-- Receive frames continuously
-- Display with minimal latency
-- Handle reconnection
-
-**Test:** Move windows on main Mac, see updates on client
-
-#### Resources:
-
-- [Flutter Networking](https://docs.flutter.dev/cookbook/networking/web-sockets)
-- [Flutter Rust Bridge](https://cjycode.com/flutter_rust_bridge/)
-- [Image Display Tutorial](https://docs.flutter.dev/cookbook/images/network-images)
+- [ ] Configure Android fullscreen mode
+- [ ] Configure macOS fullscreen window
+- [ ] Handle device rotation (Android)
+- [ ] Disable sleep/screen timeout
+- [ ] Add wake lock functionality
 
 ---
 
-## Phase 6: Platform-Specific Builds (Week 8)
+## Phase 5: Input Handling (Day 8-9)
 
-### 6.1 Android Build
+### Step 5.1: Client Input Capture
 
-```bash
-flutter build apk
-# Test on physical device via USB
-flutter install
-```
+- [ ] Capture touch events (Android)
+- [ ] Capture mouse/trackpad events (macOS client)
+- [ ] Capture keyboard events
+- [ ] Transform coordinates to server display space
+- [ ] Send input events to server
 
-**Big Step 7:** Install and run on Android phone
+### Step 5.2: Server Input Injection
 
-#### 6.2 macOS Build
-
-```bash
-flutter build macos
-open build/macos/Build/Products/Release/client.app
-```
-
-**Big Step 8:** Run on second macOS machine
-
-#### Resources:
-
-- [Flutter Platform Setup](https://docs.flutter.dev/get-started/install)
-- [Android Debug Bridge](https://developer.android.com/studio/command-line/adb)
+- [ ] Receive input events from clients
+- [ ] Transform coordinates to virtual display space
+- [ ] Inject mouse events using CGEvent APIs
+- [ ] Inject keyboard events
+- [ ] Test input accuracy and latency
 
 ---
 
-## Phase 7: USB Connection (Week 9-10)
+## Phase 6: Virtual Display Management (Day 10-12)
 
-### If choosing USB over network:
+### Step 6.1: Display Configuration
 
-#### 7.1 Server Side
+- [ ] Create virtual displays programmatically
+- [ ] Configure display positions (extend right/left)
+- [ ] Set custom resolutions based on client devices
+- [ ] Implement display arrangement UI/config
+- [ ] Handle dynamic client connections
 
-```toml
-[dependencies]
-rusb = "0.9"
-usbmuxd = "0.2"  # For iOS/Android via USB
-```
+### Step 6.2: Multi-Client Support
 
-**Big Step 9:** Establish USB communication channel
-
-#### 7.2 Client Side (Flutter)
-
-```yaml
-dependencies:
-  usb_serial: ^0.5.0 # Android
-  # For iOS, use platform channels with libimobiledevice
-```
-
-**Test:** Send/receive test data via USB
-
-#### Resources:
-
-- [usbmuxd](https://github.com/libimobiledevice/usbmuxd)
-- [Android USB Host](https://developer.android.com/guide/topics/connectivity/usb/host)
-- [Flutter Platform Channels](https://docs.flutter.dev/platform-integration/platform-channels)
+- [ ] Support 3 simultaneous clients
+- [ ] Assign unique display regions to each client
+- [ ] Handle client priority and ordering
+- [ ] Implement display re-arrangement
+- [ ] Test with all devices connected
 
 ---
 
-## Phase 8: Optimization & Features (Week 11+)
+## Phase 7: Optimization & Polish (Day 13-14)
 
-### Performance Optimization
+### Step 7.1: Performance Optimization
 
-**Big Step 10:** Optimize encoding/decoding
+- [ ] Optimize encoding settings for low latency
+- [ ] Implement adaptive bitrate based on connection
+- [ ] Reduce frame processing overhead
+- [ ] Optimize memory usage
+- [ ] Profile and fix bottlenecks
 
-- Experiment with H.264 vs JPEG
-- Implement frame skipping
-- Add quality settings
+### Step 7.2: User Experience
 
-**Test:** Measure latency and FPS
+- [ ] Add client UI for connection status
+- [ ] Add server UI/tray icon for management
+- [ ] Implement configuration persistence
+- [ ] Add error messages and recovery
+- [ ] Create connection setup wizard
 
-### Additional Features
+### Step 7.3: Testing & Documentation
 
-- [ ] Multi-monitor support (extend vs mirror)
-- [ ] Touch input from phone → main Mac
-- [ ] Resolution/quality settings
-- [ ] Auto-discovery of devices
-- [ ] Encryption for network mode
-
-#### Resources:
-
-- [Video Compression Guide](https://trac.ffmpeg.org/wiki/Encode/H.264)
-- [WebRTC for low latency](https://webrtc.org/)
-
----
-
-## Recommended Package Summary
-
-### Protocol
-
-- `serde` + `serde_json` - Serialization
-- `bincode` - Binary format (optional)
-
-### Server (Rust)
-
-- `tokio` - Async runtime
-- `screencapturekit` / `scrap` - Screen capture
-- `mozjpeg` / `ffmpeg-next` - Encoding
-- `tokio::net` - TCP (network mode)
-- `rusb` + `usbmuxd` - USB (USB mode)
-
-### Client (Flutter)
-
-- `web_socket_channel` - Network streaming
-- `cached_network_image` - Image display
-- `flutter_rust_bridge` - Rust interop (optional)
-- `usb_serial` - USB on Android (if needed)
+- [ ] Test all connection scenarios
+- [ ] Test with all device combinations
+- [ ] Document setup instructions
+- [ ] Document USB-C connection process
+- [ ] Create troubleshooting guide
 
 ---
 
-## Development Order
+## Phase 8: Advanced Features (Day 15+)
 
-1. ✅ **Protocol** (1 week) - Foundation
-2. ✅ **Server - Capture** (1-2 weeks) - Core functionality
-3. ✅ **Server - Transport** (1 week) - Network/USB
-4. ✅ **Server - Integration** (1 week) - Complete server
-5. ✅ **Client - Basic** (1-2 weeks) - Display frames
-6. ✅ **Client - Platform Builds** (1 week) - Android/macOS
-7. ⚡ **USB Implementation** (2 weeks) - If needed
-8. 🚀 **Optimization** (Ongoing) - Performance tuning
+### Step 8.1: Enhanced Features
 
----
+- [ ] Audio streaming to clients (optional)
+- [ ] Clipboard synchronization
+- [ ] Display settings (brightness, orientation)
+- [ ] Multiple encoding quality presets
+- [ ] Wireless fallback (WiFi)
 
-## Quick Start Commands
+### Step 8.2: Production Readiness
 
-```bash
-# Day 1: Setup
-cargo new --lib protocol
-cargo new server
-flutter create client
-
-# Add protocol to server
-cd server
-cargo add --path ../protocol
-
-# Run server (later)
-cargo run
-
-# Run client (later)
-cd ../client
-flutter run -d macos  # or android
-```
+- [ ] Add comprehensive error handling
+- [ ] Implement logging and diagnostics
+- [ ] Create installer/package for server
+- [ ] Build APK for Android
+- [ ] Build macOS app bundle for client
+- [ ] Add auto-update mechanism
 
 ---
 
-## Testing Milestones
+## Immediate Next Steps (Start Here)
 
-- [ ] Protocol serializes/deserializes correctly
-- [ ] Server captures screen and saves to file
-- [ ] Server streams to netcat/VLC
-- [ ] Flutter app displays static image from server
-- [ ] Flutter app displays continuous stream
-- [ ] App runs on Android device
-- [ ] App runs on second macOS
-- [ ] USB connection established (if applicable)
-- [ ] Latency < 100ms
-- [ ] Stable 30 FPS streaming
+1. **Day 1 Morning**: Set up protocol definitions
+2. **Day 1 Afternoon**: Initialize projects and dependencies
+3. **Day 2**: Implement basic screen capture POC
+4. **Day 3**: Get first frame streaming to client
 
----
+## Success Criteria
 
-## Alternative Approach: Start with MVP
+- ✅ 3 devices can connect simultaneously via USB-C
+- ✅ Each device displays unique extended screen region
+- ✅ Input events work with acceptable latency (<100ms)
+- ✅ Frame rate is smooth (≥30fps)
+- ✅ Setup is repeatable and documented
 
-If you want faster results, try this order:
+## Risk Mitigation
 
-1. **Server**: Capture screen → encode as JPEG → HTTP endpoint
-2. **Client**: Flutter app that fetches JPEG every 100ms
-3. **Upgrade**: Switch to WebSocket/TCP for streaming
-4. **Optimize**: Add H.264, reduce latency
+**Risk**: macOS virtual display creation is complex
 
-This gets you a working (albeit laggy) version in ~3 days.
+- **Mitigation**: Start with manual display configuration, automate later
 
----
+**Risk**: Encoding/decoding latency too high
 
-## Additional Resources
+- **Mitigation**: Use hardware encoding (VideoToolbox), optimize settings
 
-- [Building a Screen Sharing App](https://webrtc.github.io/samples/src/content/capture/canvas-record/)
-- [Rust Async Book](https://rust-lang.github.io/async-book/)
-- [Flutter Performance Best Practices](https://docs.flutter.dev/perf/best-practices)
-- [macOS Screen Capture Guide](https://developer.apple.com/documentation/screencapturekit/capturing_screen_content_in_macos)
+**Risk**: USB-C networking unstable
 
-Good luck! Start with the protocol, test each phase independently, and iterate quickly.
+- **Mitigation**: Implement WiFi fallback, add robust reconnection logic
+
+**Risk**: Input coordinate transformation errors
+
+- **Mitigation**: Build calibration tool, add visual debugging
