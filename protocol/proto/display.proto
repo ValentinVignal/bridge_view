@@ -1,0 +1,229 @@
+syntax = "proto3";
+
+package bridge_view;
+
+// Service definition for display streaming
+service DisplayService {
+  // Client registers and receives display configuration
+  rpc RegisterClient(ClientRegistration) returns (DisplayConfig);
+  
+  // Stream video frames from server to client
+  rpc StreamFrames(stream FrameRequest) returns (stream VideoFrame);
+  
+  // Send input events from client to server
+  rpc SendInput(stream InputEvent) returns (stream InputResponse);
+  
+  // Control messages for connection management
+  rpc SendControl(ControlMessage) returns (ControlResponse);
+}
+
+// Client registration request
+message ClientRegistration {
+  string client_id = 1;           // Unique client identifier
+  DeviceType device_type = 2;     // Type of device (phone, laptop)
+  string device_name = 3;         // Human-readable device name
+  ClientCapabilities capabilities = 4;  // Client capabilities
+}
+
+// Device type enumeration
+enum DeviceType {
+  DEVICE_TYPE_UNSPECIFIED = 0;
+  DEVICE_TYPE_ANDROID_PHONE = 1;
+  DEVICE_TYPE_MACOS_LAPTOP = 2;
+  DEVICE_TYPE_IOS_PHONE = 3;
+}
+
+// Client capabilities
+message ClientCapabilities {
+  uint32 max_width = 1;           // Maximum display width
+  uint32 max_height = 2;          // Maximum display height
+  repeated VideoCodec supported_codecs = 3;  // Supported video codecs
+  bool supports_touch = 4;        // Supports touch input
+  bool supports_keyboard = 5;     // Supports keyboard input
+  bool supports_mouse = 6;        // Supports mouse input
+  uint32 max_framerate = 7;       // Maximum supported frame rate
+}
+
+// Video codec enumeration
+enum VideoCodec {
+  VIDEO_CODEC_UNSPECIFIED = 0;
+  VIDEO_CODEC_H264 = 1;
+  VIDEO_CODEC_H265 = 2;
+  VIDEO_CODEC_VP8 = 3;
+  VIDEO_CODEC_VP9 = 4;
+}
+
+// Display configuration sent to client
+message DisplayConfig {
+  string session_id = 1;          // Session identifier
+  uint32 display_width = 2;       // Display width in pixels
+  uint32 display_height = 3;      // Display height in pixels
+  uint32 framerate = 4;           // Target frame rate
+  VideoCodec codec = 5;           // Video codec to use
+  DisplayPosition position = 6;   // Position in extended desktop
+  CompressionSettings compression = 7;  // Compression settings
+}
+
+// Display position in extended desktop
+message DisplayPosition {
+  int32 x_offset = 1;             // X offset from primary display
+  int32 y_offset = 2;             // Y offset from primary display
+  uint32 width = 3;               // Width of display region
+  uint32 height = 4;              // Height of display region
+}
+
+// Compression settings
+message CompressionSettings {
+  uint32 bitrate_kbps = 1;        // Target bitrate in kbps
+  uint32 quality = 2;             // Quality level (0-100)
+  bool adaptive_bitrate = 3;      // Enable adaptive bitrate
+}
+
+// Frame request from client
+message FrameRequest {
+  string session_id = 1;          // Session identifier
+  uint64 last_frame_sequence = 2; // Last received frame sequence number
+  FrameRequestType request_type = 3;  // Type of request
+}
+
+// Frame request type
+enum FrameRequestType {
+  FRAME_REQUEST_TYPE_UNSPECIFIED = 0;
+  FRAME_REQUEST_TYPE_CONTINUE = 1;     // Continue streaming
+  FRAME_REQUEST_TYPE_KEYFRAME = 2;     // Request keyframe
+  FRAME_REQUEST_TYPE_PAUSE = 3;        // Pause streaming
+  FRAME_REQUEST_TYPE_RESUME = 4;       // Resume streaming
+}
+
+// Video frame data
+message VideoFrame {
+  uint64 sequence_number = 1;     // Frame sequence number
+  uint64 timestamp_us = 2;        // Timestamp in microseconds
+  bytes frame_data = 3;           // Encoded frame data
+  FrameType frame_type = 4;       // Type of frame (keyframe, etc.)
+  uint32 width = 5;               // Frame width
+  uint32 height = 6;              // Frame height
+}
+
+// Frame type enumeration
+enum FrameType {
+  FRAME_TYPE_UNSPECIFIED = 0;
+  FRAME_TYPE_KEYFRAME = 1;        // I-frame / keyframe
+  FRAME_TYPE_DELTA = 2;           // P-frame / delta frame
+}
+
+// Input event from client to server
+message InputEvent {
+  string session_id = 1;          // Session identifier
+  uint64 timestamp_us = 2;        // Timestamp in microseconds
+  oneof event {
+    MouseEvent mouse = 3;
+    KeyboardEvent keyboard = 4;
+    TouchEvent touch = 5;
+  }
+}
+
+// Mouse event
+message MouseEvent {
+  MouseEventType type = 1;        // Event type
+  float x = 2;                    // X coordinate (normalized 0-1)
+  float y = 3;                    // Y coordinate (normalized 0-1)
+  MouseButton button = 4;         // Button pressed
+  int32 scroll_delta_x = 5;       // Horizontal scroll delta
+  int32 scroll_delta_y = 6;       // Vertical scroll delta
+  KeyModifiers modifiers = 7;     // Keyboard modifiers
+}
+
+// Mouse event type
+enum MouseEventType {
+  MOUSE_EVENT_TYPE_UNSPECIFIED = 0;
+  MOUSE_EVENT_TYPE_MOVE = 1;
+  MOUSE_EVENT_TYPE_DOWN = 2;
+  MOUSE_EVENT_TYPE_UP = 3;
+  MOUSE_EVENT_TYPE_SCROLL = 4;
+  MOUSE_EVENT_TYPE_DRAG = 5;
+}
+
+// Mouse button
+enum MouseButton {
+  MOUSE_BUTTON_UNSPECIFIED = 0;
+  MOUSE_BUTTON_LEFT = 1;
+  MOUSE_BUTTON_RIGHT = 2;
+  MOUSE_BUTTON_MIDDLE = 3;
+}
+
+// Keyboard event
+message KeyboardEvent {
+  KeyboardEventType type = 1;     // Event type
+  uint32 key_code = 2;            // Key code
+  string key_char = 3;            // Character representation
+  KeyModifiers modifiers = 4;     // Keyboard modifiers
+}
+
+// Keyboard event type
+enum KeyboardEventType {
+  KEYBOARD_EVENT_TYPE_UNSPECIFIED = 0;
+  KEYBOARD_EVENT_TYPE_DOWN = 1;
+  KEYBOARD_EVENT_TYPE_UP = 2;
+  KEYBOARD_EVENT_TYPE_PRESS = 3;
+}
+
+// Keyboard modifiers
+message KeyModifiers {
+  bool shift = 1;
+  bool ctrl = 2;
+  bool alt = 3;
+  bool meta = 4;                  // Command on macOS, Windows key on Windows
+}
+
+// Touch event
+message TouchEvent {
+  TouchEventType type = 1;        // Event type
+  repeated TouchPoint touches = 2; // Touch points
+}
+
+// Touch event type
+enum TouchEventType {
+  TOUCH_EVENT_TYPE_UNSPECIFIED = 0;
+  TOUCH_EVENT_TYPE_DOWN = 1;
+  TOUCH_EVENT_TYPE_MOVE = 2;
+  TOUCH_EVENT_TYPE_UP = 3;
+  TOUCH_EVENT_TYPE_CANCEL = 4;
+}
+
+// Touch point
+message TouchPoint {
+  uint32 id = 1;                  // Touch point identifier
+  float x = 2;                    // X coordinate (normalized 0-1)
+  float y = 3;                    // Y coordinate (normalized 0-1)
+  float pressure = 4;             // Pressure (0-1)
+}
+
+// Input response
+message InputResponse {
+  bool success = 1;               // Whether input was processed
+  string error_message = 2;       // Error message if failed
+}
+
+// Control message
+message ControlMessage {
+  string session_id = 1;          // Session identifier
+  ControlMessageType type = 2;    // Type of control message
+  string payload = 3;             // Optional payload data
+}
+
+// Control message type
+enum ControlMessageType {
+  CONTROL_MESSAGE_TYPE_UNSPECIFIED = 0;
+  CONTROL_MESSAGE_TYPE_HEARTBEAT = 1;      // Heartbeat/ping
+  CONTROL_MESSAGE_TYPE_DISCONNECT = 2;     // Graceful disconnect
+  CONTROL_MESSAGE_TYPE_RECONFIGURE = 3;    // Request reconfiguration
+  CONTROL_MESSAGE_TYPE_ERROR = 4;          // Error notification
+}
+
+// Control response
+message ControlResponse {
+  bool success = 1;               // Whether control message was processed
+  string message = 2;             // Response message
+  uint64 timestamp_us = 3;        // Server timestamp for heartbeat
+}

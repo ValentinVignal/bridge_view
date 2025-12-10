@@ -17,8 +17,8 @@ Create a multi-device display extension system that allows 2 Android phones and 
 
 ### Step 1.1: Protocol Definition
 
-- [ ] Create `protocol/proto/display.proto`
-- [ ] Define message types:
+- [x] Create `protocol/proto/display.proto`
+- [x] Define message types:
   - `ClientRegistration` (client info, device type, capabilities)
   - `DisplayConfig` (resolution, position, frame rate)
   - `VideoFrame` (encoded frame data, timestamp, sequence number)
