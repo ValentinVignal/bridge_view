@@ -9,8 +9,7 @@ all: rust dart
 rust:
 	@echo "Generating Rust protocol buffers..."
 	@mkdir -p ../server/src/proto
-	protoc --rust_out=../server/src/proto \
-		--prost_out=../server/src/proto \
+	protoc --prost_out=../server/src/proto \
 		proto/display.proto
 	@echo "✓ Rust code generated in ../server/src/proto"
 
