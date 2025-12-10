@@ -25,7 +25,7 @@ Create a multi-device display extension system that allows 2 Android phones and 
   - `InputEvent` (mouse, keyboard, touch events with coordinates)
   - `ControlMessage` (connection management, heartbeat)
 - [x] Generate Rust code: `make rust`
-- [ ] Generate Dart code: `protoc --dart_out=client/lib/proto`
+- [x] Generate Dart code: `make dart`
 
 ### Step 1.2: Project Structure Setup
 
