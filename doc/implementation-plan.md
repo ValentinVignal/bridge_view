@@ -40,12 +40,12 @@ Create a multi-device display extension system that allows 2 Android phones and 
 
 ### Step 2.1: Virtual Display Research & POC
 
-- [ ] Research macOS virtual display options:
+- [x] Research macOS virtual display options:
   - CoreGraphics display configuration
   - Third-party drivers (e.g., BetterDisplay API)
   - CGConfigureDisplayMode for custom resolutions
-- [ ] Create proof-of-concept: detect connected displays
-- [ ] Document virtual display creation approach
+- [x] Create proof-of-concept: detect connected displays
+- [x] Document virtual display creation approach
 
 ### Step 2.2: Screen Capture Implementation
 
