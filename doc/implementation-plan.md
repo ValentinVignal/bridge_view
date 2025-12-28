@@ -49,11 +49,13 @@ Create a multi-device display extension system that allows 2 Android phones and 
 
 ### Step 2.2: Screen Capture Implementation
 
-- [ ] Implement capture module using `CGDisplayStream`
-- [ ] Capture entire virtual displays (not regions)
+- [x] Implement capture module using `CGDisplayCreateImage` (simpler approach)
+- [x] Capture entire virtual displays (not regions)
 - [ ] Convert captured frames to RGB/YUV format
 - [ ] Add frame rate limiting (30 fps initially)
 - [ ] Test capture performance and optimize
+
+**Note**: Initial implementation uses `CGDisplayCreateImage` instead of `CGDisplayStream` due to complexity with blocks and dispatch queues. This successfully captures frames but needs optimization for continuous streaming.
 
 ### Step 2.3: Basic Encoding
 
