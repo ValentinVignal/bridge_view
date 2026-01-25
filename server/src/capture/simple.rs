@@ -2,6 +2,10 @@ use core_foundation::base::{CFRelease, CFTypeRef};
 use core_graphics::display::CGDirectDisplayID;
 use core_graphics::image::CGImage;
 use std::slice;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use std::time::{Duration, Instant};
 
 /// Simple screen capture using CGDisplayCreateImage
 pub struct SimpleCapture {
@@ -62,6 +66,121 @@ impl SimpleCapture {
             bytes_per_row,
             pixel_data,
         })
+    }
+
+    /// Capture frames continuously at a specified frame rate
+    ///
+    /// Returns a handle that can be used to stop the capture
+    pub fn capture_continuous<F>(&self, target_fps: f64, mut callback: F) -> ContinuousCaptureHandle
+    where
+        F: FnMut(CapturedImage, CaptureStats) + Send + 'static,
+    {
+        let display_id = self.display_id;
+        let running = Arc::new(AtomicBool::new(true));
+        let running_clone = running.clone();
+
+        let handle = thread::spawn(move || {
+            let frame_duration = Duration::from_secs_f64(1.0 / target_fps);
+            let mut frame_count = 0u64;
+            let start_time = Instant::now();
+            let mut last_stats_time = Instant::now();
+            let mut stats_frame_count = 0u64;
+
+            while running_clone.load(Ordering::Relaxed) {
+                let frame_start = Instant::now();
+
+                // Capture frame
+                let capture = SimpleCapture::new(display_id);
+                match capture.capture_frame() {
+                    Ok(image) => {
+                        frame_count += 1;
+                        stats_frame_count += 1;
+
+                        let capture_time = frame_start.elapsed();
+                        let total_elapsed = start_time.elapsed();
+
+                        let stats = CaptureStats {
+                            frame_number: frame_count,
+                            capture_duration: capture_time,
+                            total_elapsed,
+                            average_fps: frame_count as f64 / total_elapsed.as_secs_f64(),
+                        };
+
+                        callback(image, stats);
+                    }
+                    Err(e) => {
+                        eprintln!("Frame capture error: {}", e);
+                        break;
+                    }
+                }
+
+                // Calculate sleep duration to maintain target frame rate
+                let elapsed = frame_start.elapsed();
+                if elapsed < frame_duration {
+                    thread::sleep(frame_duration - elapsed);
+                }
+
+                // Log stats every second
+                let now = Instant::now();
+                if now.duration_since(last_stats_time).as_secs() >= 1 {
+                    let period_duration = now.duration_since(last_stats_time).as_secs_f64();
+                    let period_fps = stats_frame_count as f64 / period_duration;
+                    let total_elapsed = start_time.elapsed().as_secs_f64();
+                    let average_fps = frame_count as f64 / total_elapsed;
+
+                    println!(
+                        "Capture: {} frames total, avg {:.1} fps, last second {:.1} fps",
+                        frame_count, average_fps, period_fps
+                    );
+
+                    last_stats_time = now;
+                    stats_frame_count = 0;
+                }
+            }
+
+            println!("Continuous capture stopped after {} frames", frame_count);
+        });
+
+        ContinuousCaptureHandle {
+            running,
+            thread_handle: Some(handle),
+        }
+    }
+}
+
+/// Statistics about a captured frame
+#[derive(Debug, Clone)]
+pub struct CaptureStats {
+    pub frame_number: u64,
+    pub capture_duration: Duration,
+    pub total_elapsed: Duration,
+    pub average_fps: f64,
+}
+
+/// Handle for controlling continuous capture
+pub struct ContinuousCaptureHandle {
+    running: Arc<AtomicBool>,
+    thread_handle: Option<thread::JoinHandle<()>>,
+}
+
+impl ContinuousCaptureHandle {
+    /// Stop the continuous capture
+    pub fn stop(&mut self) {
+        self.running.store(false, Ordering::Relaxed);
+        if let Some(handle) = self.thread_handle.take() {
+            let _ = handle.join();
+        }
+    }
+
+    /// Check if capture is still running
+    pub fn is_running(&self) -> bool {
+        self.running.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for ContinuousCaptureHandle {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 

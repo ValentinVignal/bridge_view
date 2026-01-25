@@ -15,6 +15,10 @@ fn main() {
     println!("\n=== Testing Simple Screen Capture ===\n");
     test_simple_capture();
 
+    // Test continuous capture with frame rate limiting
+    println!("\n=== Testing Continuous Capture with Frame Rate Limiting ===\n");
+    test_continuous_capture();
+
     // Test streaming screen capture
     println!("\n=== Testing Streaming Screen Capture ===\n");
     test_screen_capture();
@@ -134,6 +138,59 @@ fn test_simple_capture() {
     }
 
     println!("\nSimple capture test completed successfully!");
+}
+
+fn test_continuous_capture() {
+    let main_display = CGDisplay::main();
+    let display_id = main_display.id;
+
+    println!(
+        "Testing continuous capture at 30 fps on display {}",
+        display_id
+    );
+
+    let capture = SimpleCapture::new(display_id);
+
+    // Track frame statistics
+    let frame_count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let frame_count_clone = frame_count.clone();
+
+    // Start continuous capture at 30 fps
+    let mut handle = capture.capture_continuous(30.0, move |image, stats| {
+        let count = frame_count_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+
+        // Print details for first frame only
+        if count == 1 {
+            println!("  First frame: {}", image.format());
+            println!("  Data size: {} bytes", image.data_size());
+            println!(
+                "  Capture took: {:.1}ms\n",
+                stats.capture_duration.as_secs_f64() * 1000.0
+            );
+        }
+    });
+
+    // Run for 3 seconds
+    println!("Capturing at 30 fps target for 3 seconds...\n");
+    thread::sleep(Duration::from_secs(3));
+
+    // Stop capture
+    handle.stop();
+
+    let total_frames = frame_count.load(std::sync::atomic::Ordering::Relaxed);
+    let actual_fps = total_frames as f64 / 3.0;
+
+    println!(
+        "\n✓ Continuous capture test completed: {} frames captured ({:.1} fps average)",
+        total_frames, actual_fps
+    );
+
+    // Note about performance
+    if actual_fps < 25.0 {
+        println!("  Note: Actual FPS is limited by CGDisplayCreateImage performance");
+        println!("        on high-resolution Retina displays (~70ms per frame).");
+        println!("        This will improve with hardware encoding in Phase 2.3.");
+    }
 }
 
 fn test_screen_capture() {
