@@ -1,6 +1,7 @@
 use core_foundation::base::{CFRelease, CFTypeRef};
 use core_graphics::display::CGDirectDisplayID;
 use core_graphics::image::CGImage;
+use std::slice;
 
 /// Simple screen capture using CGDisplayCreateImage
 pub struct SimpleCapture {
@@ -12,7 +13,7 @@ impl SimpleCapture {
         Self { display_id }
     }
 
-    /// Capture a single frame from the display
+    /// Capture a single frame from the display with pixel data
     pub fn capture_frame(&self) -> Result<CapturedImage, String> {
         let image_ref = unsafe { CGDisplayCreateImage(self.display_id) };
 
@@ -27,8 +28,31 @@ impl SimpleCapture {
         let bits_per_pixel = unsafe { CGImageGetBitsPerPixel(image_ref) };
         let bytes_per_row = unsafe { CGImageGetBytesPerRow(image_ref) };
 
-        // Release the image
-        unsafe { CFRelease(image_ref as CFTypeRef) };
+        // Get the pixel data
+        let data_provider = unsafe { CGImageGetDataProvider(image_ref) };
+        if data_provider.is_null() {
+            unsafe { CFRelease(image_ref as CFTypeRef) };
+            return Err("Failed to get data provider from image".to_string());
+        }
+
+        let cf_data = unsafe { CGDataProviderCopyData(data_provider) };
+        if cf_data.is_null() {
+            unsafe { CFRelease(image_ref as CFTypeRef) };
+            return Err("Failed to copy data from data provider".to_string());
+        }
+
+        // Get pointer to the raw bytes
+        let data_ptr = unsafe { CFDataGetBytePtr(cf_data) };
+        let data_length = unsafe { CFDataGetLength(cf_data) };
+
+        // Copy the pixel data into a Vec
+        let pixel_data = unsafe { slice::from_raw_parts(data_ptr, data_length as usize).to_vec() };
+
+        // Release resources
+        unsafe {
+            CFRelease(cf_data as CFTypeRef);
+            CFRelease(image_ref as CFTypeRef);
+        }
 
         Ok(CapturedImage {
             width,
@@ -36,6 +60,7 @@ impl SimpleCapture {
             bits_per_component,
             bits_per_pixel,
             bytes_per_row,
+            pixel_data,
         })
     }
 }
@@ -48,9 +73,115 @@ pub struct CapturedImage {
     pub bits_per_component: usize,
     pub bits_per_pixel: usize,
     pub bytes_per_row: usize,
+    pub pixel_data: Vec<u8>,
+}
+
+impl CapturedImage {
+    /// Get the format description of the image
+    pub fn format(&self) -> String {
+        format!(
+            "{}x{} @ {} bpc, {} bpp ({} bytes/row)",
+            self.width,
+            self.height,
+            self.bits_per_component,
+            self.bits_per_pixel,
+            self.bytes_per_row
+        )
+    }
+
+    /// Get the total size of the image data in bytes
+    pub fn data_size(&self) -> usize {
+        self.pixel_data.len()
+    }
+
+    /// Convert BGRA to RGB format
+    /// macOS typically captures in BGRA format (32 bits per pixel)
+    pub fn to_rgb(&self) -> Result<Vec<u8>, String> {
+        if self.bits_per_pixel != 32 {
+            return Err(format!(
+                "Expected 32 bits per pixel for BGRA format, got {}",
+                self.bits_per_pixel
+            ));
+        }
+
+        let mut rgb_data = Vec::with_capacity(self.width * self.height * 3);
+
+        // Convert BGRA to RGB
+        for chunk in self.pixel_data.chunks_exact(4) {
+            rgb_data.push(chunk[2]); // R (from B)
+            rgb_data.push(chunk[1]); // G
+            rgb_data.push(chunk[0]); // B (from R)
+            // Skip alpha channel (chunk[3])
+        }
+
+        Ok(rgb_data)
+    }
+
+    /// Convert BGRA to I420 (YUV 4:2:0 planar) format
+    /// This is a common format for video encoding
+    pub fn to_i420(&self) -> Result<Vec<u8>, String> {
+        if self.bits_per_pixel != 32 {
+            return Err(format!(
+                "Expected 32 bits per pixel for BGRA format, got {}",
+                self.bits_per_pixel
+            ));
+        }
+
+        let width = self.width;
+        let height = self.height;
+
+        // I420 format: Y plane (full size) + U plane (quarter size) + V plane (quarter size)
+        let y_size = width * height;
+        let uv_size = (width / 2) * (height / 2);
+        let mut i420_data = vec![0u8; y_size + uv_size * 2];
+
+        // Split the buffer into mutable planes
+        let (y_plane, uv_planes) = i420_data.split_at_mut(y_size);
+        let (u_plane, v_plane) = uv_planes.split_at_mut(uv_size);
+
+        // Convert BGRA to YUV
+        for y in 0..height {
+            for x in 0..width {
+                let pixel_index = y * width + x;
+                let bgra_index = pixel_index * 4;
+
+                let b = self.pixel_data[bgra_index] as f32;
+                let g = self.pixel_data[bgra_index + 1] as f32;
+                let r = self.pixel_data[bgra_index + 2] as f32;
+
+                // RGB to YUV conversion (BT.601)
+                let y_value = (0.299 * r + 0.587 * g + 0.114 * b).clamp(0.0, 255.0) as u8;
+                y_plane[pixel_index] = y_value;
+
+                // Subsample U and V (only calculate for every 2x2 block)
+                if x % 2 == 0 && y % 2 == 0 {
+                    let u_value =
+                        (-0.169 * r - 0.331 * g + 0.500 * b + 128.0).clamp(0.0, 255.0) as u8;
+                    let v_value =
+                        (0.500 * r - 0.419 * g - 0.081 * b + 128.0).clamp(0.0, 255.0) as u8;
+
+                    let uv_index = (y / 2) * (width / 2) + (x / 2);
+                    u_plane[uv_index] = u_value;
+                    v_plane[uv_index] = v_value;
+                }
+            }
+        }
+
+        Ok(i420_data)
+    }
 }
 
 // External C functions
+#[repr(C)]
+struct CGDataProvider {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
+struct CFData {
+    _private: [u8; 0],
+}
+
 unsafe extern "C" {
     fn CGDisplayCreateImage(display: CGDirectDisplayID) -> *mut CGImage;
     fn CGImageGetWidth(image: *mut CGImage) -> usize;
@@ -58,4 +189,8 @@ unsafe extern "C" {
     fn CGImageGetBitsPerComponent(image: *mut CGImage) -> usize;
     fn CGImageGetBitsPerPixel(image: *mut CGImage) -> usize;
     fn CGImageGetBytesPerRow(image: *mut CGImage) -> usize;
+    fn CGImageGetDataProvider(image: *mut CGImage) -> *mut CGDataProvider;
+    fn CGDataProviderCopyData(provider: *mut CGDataProvider) -> *mut CFData;
+    fn CFDataGetBytePtr(data: *mut CFData) -> *const u8;
+    fn CFDataGetLength(data: *mut CFData) -> isize;
 }

@@ -77,24 +77,63 @@ fn test_simple_capture() {
 
     let capture = SimpleCapture::new(display_id);
 
-    // Capture a few frames
-    for i in 1..=5 {
+    // Capture a few frames and test format conversions
+    for i in 1..=3 {
         match capture.capture_frame() {
             Ok(image) => {
-                println!(
-                    "Frame #{}: {}x{} pixels, {} bits/pixel, {} bytes/row",
-                    i, image.width, image.height, image.bits_per_pixel, image.bytes_per_row
-                );
+                println!("\nFrame #{}: {}", i, image.format());
+                println!("  Raw data size: {} bytes", image.data_size());
+
+                // Test RGB conversion
+                match image.to_rgb() {
+                    Ok(rgb_data) => {
+                        println!("  RGB conversion: {} bytes", rgb_data.len());
+                        // Print first pixel
+                        if rgb_data.len() >= 3 {
+                            println!(
+                                "  First pixel RGB: [{}, {}, {}]",
+                                rgb_data[0], rgb_data[1], rgb_data[2]
+                            );
+                        }
+                    }
+                    Err(e) => eprintln!("  RGB conversion error: {}", e),
+                }
+
+                // Test I420 conversion
+                match image.to_i420() {
+                    Ok(i420_data) => {
+                        println!("  I420 conversion: {} bytes", i420_data.len());
+                        let y_size = image.width * image.height;
+                        let uv_size = (image.width / 2) * (image.height / 2);
+                        println!(
+                            "  I420 planes: Y={} bytes, U={} bytes, V={} bytes",
+                            y_size, uv_size, uv_size
+                        );
+                        // Print first Y, U, V values
+                        if i420_data.len() >= y_size + uv_size * 2 {
+                            println!(
+                                "  First pixel YUV: Y={}, U={}, V={}",
+                                i420_data[0],
+                                i420_data[y_size],
+                                i420_data[y_size + uv_size]
+                            );
+                        }
+                    }
+                    Err(e) => eprintln!("  I420 conversion error: {}", e),
+                }
             }
             Err(e) => {
                 eprintln!("Error capturing frame: {}", e);
                 return;
             }
         }
-        thread::sleep(Duration::from_millis(500));
+
+        if i < 3 {
+            thread::sleep(Duration::from_millis(500));
+        }
     }
 
-    println!("Simple capture test completed successfully!");
+    println!("\nSimple capture test completed successfully!");
 }
 
 fn test_screen_capture() {

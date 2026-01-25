@@ -51,7 +51,7 @@ Create a multi-device display extension system that allows 2 Android phones and 
 
 - [x] Implement capture module using `CGDisplayCreateImage` (simpler approach)
 - [x] Capture entire virtual displays (not regions)
-- [ ] Convert captured frames to RGB/YUV format
+- [x] Convert captured frames to RGB/YUV format
 - [ ] Add frame rate limiting (30 fps initially)
 - [ ] Test capture performance and optimize
 
