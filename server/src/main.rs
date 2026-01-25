@@ -19,6 +19,10 @@ fn main() {
     println!("\n=== Testing Continuous Capture with Frame Rate Limiting ===\n");
     test_continuous_capture();
 
+    // Test capture performance and optimizations
+    println!("\n=== Testing Capture Performance ===\n");
+    test_capture_performance();
+
     // Test streaming screen capture
     println!("\n=== Testing Streaming Screen Capture ===\n");
     test_screen_capture();
@@ -191,6 +195,129 @@ fn test_continuous_capture() {
         println!("        on high-resolution Retina displays (~70ms per frame).");
         println!("        This will improve with hardware encoding in Phase 2.3.");
     }
+}
+
+fn test_capture_performance() {
+    let main_display = CGDisplay::main();
+    let display_id = main_display.id;
+
+    println!("Running performance benchmark on display {}", display_id);
+
+    let capture = SimpleCapture::new(display_id);
+
+    // Benchmark: Frame capture only
+    println!("\n1. Frame Capture Performance:");
+    let mut capture_times = Vec::new();
+    for i in 1..=10 {
+        let start = std::time::Instant::now();
+        match capture.capture_frame() {
+            Ok(image) => {
+                let duration = start.elapsed();
+                capture_times.push(duration.as_secs_f64() * 1000.0);
+
+                if i == 1 {
+                    println!("   Frame size: {}x{}", image.width, image.height);
+                    println!(
+                        "   Raw data: {:.2} MB",
+                        image.data_size() as f64 / 1_048_576.0
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("   Capture error: {}", e);
+                return;
+            }
+        }
+    }
+
+    let avg_capture = capture_times.iter().sum::<f64>() / capture_times.len() as f64;
+    let min_capture = capture_times.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max_capture = capture_times
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    println!(
+        "   Capture time: avg {:.1}ms, min {:.1}ms, max {:.1}ms",
+        avg_capture, min_capture, max_capture
+    );
+    println!("   Max theoretical FPS: {:.1}", 1000.0 / avg_capture);
+
+    // Benchmark: RGB conversion
+    println!("\n2. RGB Conversion Performance:");
+    let image = capture.capture_frame().unwrap();
+    let mut rgb_times = Vec::new();
+    for _ in 1..=10 {
+        let start = std::time::Instant::now();
+        let rgb_data = image.to_rgb().unwrap();
+        let duration = start.elapsed();
+        rgb_times.push(duration.as_secs_f64() * 1000.0);
+
+        if rgb_times.len() == 1 {
+            println!("   RGB data: {:.2} MB", rgb_data.len() as f64 / 1_048_576.0);
+        }
+    }
+
+    let avg_rgb = rgb_times.iter().sum::<f64>() / rgb_times.len() as f64;
+    println!("   RGB conversion: avg {:.1}ms", avg_rgb);
+
+    // Benchmark: I420 conversion
+    println!("\n3. I420 (YUV) Conversion Performance:");
+    let mut i420_times = Vec::new();
+    for _ in 1..=10 {
+        let start = std::time::Instant::now();
+        let i420_data = image.to_i420().unwrap();
+        let duration = start.elapsed();
+        i420_times.push(duration.as_secs_f64() * 1000.0);
+
+        if i420_times.len() == 1 {
+            println!(
+                "   I420 data: {:.2} MB",
+                i420_data.len() as f64 / 1_048_576.0
+            );
+            let compression_ratio = image.data_size() as f64 / i420_data.len() as f64;
+            println!("   Compression: {:.1}x smaller than raw", compression_ratio);
+        }
+    }
+
+    let avg_i420 = i420_times.iter().sum::<f64>() / i420_times.len() as f64;
+    println!("   I420 conversion: avg {:.1}ms", avg_i420);
+
+    // Overall pipeline performance
+    println!("\n4. Complete Pipeline (Capture + Convert to I420):");
+    let total_time = avg_capture + avg_i420;
+    let pipeline_fps = 1000.0 / total_time;
+    println!("   Total time: {:.1}ms", total_time);
+    println!("   Pipeline FPS: {:.1}", pipeline_fps);
+
+    // Memory bandwidth analysis
+    println!("\n5. Memory Bandwidth:");
+    let bytes_per_frame = image.data_size();
+    let bandwidth_mbps = (bytes_per_frame as f64 / 1_048_576.0) / (avg_capture / 1000.0);
+    println!("   Read bandwidth: {:.1} MB/s", bandwidth_mbps);
+
+    // Optimization recommendations
+    println!("\n6. Optimization Summary:");
+    if avg_capture > 50.0 {
+        println!("   ⚠ Capture is the main bottleneck ({:.1}ms)", avg_capture);
+        println!("   → Consider switching to CGDisplayStream for better performance");
+        println!("   → Or reduce capture resolution");
+    }
+    if avg_i420 > 20.0 {
+        println!("   ⚠ I420 conversion is slow ({:.1}ms)", avg_i420);
+        println!("   → Consider using SIMD optimizations or GPU acceleration");
+    }
+    if pipeline_fps >= 30.0 {
+        println!("   ✓ Pipeline can sustain 30 fps target");
+    } else if pipeline_fps >= 24.0 {
+        println!("   ⚠ Pipeline can sustain 24 fps (cinematic)");
+    } else {
+        println!(
+            "   ⚠ Pipeline too slow for real-time video ({:.1} fps)",
+            pipeline_fps
+        );
+    }
+
+    println!("\nPerformance testing completed!");
 }
 
 fn test_screen_capture() {

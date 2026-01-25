@@ -238,6 +238,7 @@ impl CapturedImage {
 
     /// Convert BGRA to I420 (YUV 4:2:0 planar) format
     /// This is a common format for video encoding
+    /// Optimized version using integer arithmetic and iterators
     pub fn to_i420(&self) -> Result<Vec<u8>, String> {
         if self.bits_per_pixel != 32 {
             return Err(format!(
@@ -258,31 +259,35 @@ impl CapturedImage {
         let (y_plane, uv_planes) = i420_data.split_at_mut(y_size);
         let (u_plane, v_plane) = uv_planes.split_at_mut(uv_size);
 
-        // Convert BGRA to YUV
-        for y in 0..height {
-            for x in 0..width {
+        // Process Y plane - convert all pixels
+        for (i, bgra) in self.pixel_data.chunks_exact(4).enumerate() {
+            let b = bgra[0] as i32;
+            let g = bgra[1] as i32;
+            let r = bgra[2] as i32;
+
+            // Y = (77*R + 150*G + 29*B) >> 8
+            y_plane[i] = ((77 * r + 150 * g + 29 * b) >> 8).clamp(0, 255) as u8;
+        }
+
+        // Process UV planes - subsample every 2x2 block
+        for y in (0..height).step_by(2) {
+            for x in (0..width).step_by(2) {
                 let pixel_index = y * width + x;
                 let bgra_index = pixel_index * 4;
 
-                let b = self.pixel_data[bgra_index] as f32;
-                let g = self.pixel_data[bgra_index + 1] as f32;
-                let r = self.pixel_data[bgra_index + 2] as f32;
+                let b = self.pixel_data[bgra_index] as i32;
+                let g = self.pixel_data[bgra_index + 1] as i32;
+                let r = self.pixel_data[bgra_index + 2] as i32;
 
-                // RGB to YUV conversion (BT.601)
-                let y_value = (0.299 * r + 0.587 * g + 0.114 * b).clamp(0.0, 255.0) as u8;
-                y_plane[pixel_index] = y_value;
+                // U = ((-43*R - 85*G + 128*B) >> 8) + 128
+                let u_value = (((-43 * r - 85 * g + 128 * b) >> 8) + 128).clamp(0, 255) as u8;
 
-                // Subsample U and V (only calculate for every 2x2 block)
-                if x % 2 == 0 && y % 2 == 0 {
-                    let u_value =
-                        (-0.169 * r - 0.331 * g + 0.500 * b + 128.0).clamp(0.0, 255.0) as u8;
-                    let v_value =
-                        (0.500 * r - 0.419 * g - 0.081 * b + 128.0).clamp(0.0, 255.0) as u8;
+                // V = ((128*R - 107*G - 21*B) >> 8) + 128
+                let v_value = (((128 * r - 107 * g - 21 * b) >> 8) + 128).clamp(0, 255) as u8;
 
-                    let uv_index = (y / 2) * (width / 2) + (x / 2);
-                    u_plane[uv_index] = u_value;
-                    v_plane[uv_index] = v_value;
-                }
+                let uv_index = (y / 2) * (width / 2) + (x / 2);
+                u_plane[uv_index] = u_value;
+                v_plane[uv_index] = v_value;
             }
         }
 
