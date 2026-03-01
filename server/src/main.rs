@@ -3,7 +3,12 @@ use std::thread;
 use std::time::Duration;
 
 mod capture;
+mod encoder;
+
 use capture::{CaptureConfig, DisplayCapture, SimpleCapture};
+use encoder::{
+    EncoderConfig, EncoderQuality, EncodingQueue, FrameEncoder, QueueConfig, QueuedFrame,
+};
 
 fn main() {
     println!("Bridge View Server - Display Capture Test\n");
@@ -26,6 +31,14 @@ fn main() {
     // Test streaming screen capture
     println!("\n=== Testing Streaming Screen Capture ===\n");
     test_screen_capture();
+
+    // Test encoding with frame queue
+    println!("\n=== Testing H.264 Encoding with Frame Queue ===\n");
+    test_encoding_with_queue();
+
+    // Benchmark encoding performance
+    println!("\n=== Benchmarking Encoding Performance ===\n");
+    test_encoding_performance();
 }
 
 fn detect_displays() {
@@ -373,5 +386,244 @@ fn test_screen_capture() {
 
     // Stop capture
     capture.stop();
-    println!("Capture test completed");
+
+    println!("\nStream capture test completed!");
+}
+
+fn test_encoding_with_queue() {
+    let main_display = CGDisplay::main();
+    let display_id = main_display.id;
+    let bounds = main_display.bounds();
+
+    println!(
+        "Testing encoding with queue on display {} ({}x{})",
+        display_id, bounds.size.width as usize, bounds.size.height as usize
+    );
+
+    // Configure encoder for medium quality
+    let encoder_config =
+        EncoderConfig::new(bounds.size.width as usize, bounds.size.height as usize)
+            .with_fps(30.0)
+            .with_quality(EncoderQuality::Medium)
+            .with_low_latency(true);
+
+    // Create encoding queue
+    let queue_config = QueueConfig::default();
+    let encoding_queue = match EncodingQueue::new(encoder_config, queue_config) {
+        Ok(queue) => queue,
+        Err(e) => {
+            eprintln!("Failed to create encoding queue: {}", e);
+            return;
+        }
+    };
+
+    println!("\nCapturing and encoding for 10 seconds...");
+    println!("Quality: Medium | Target FPS: 30");
+
+    // Start capture thread
+    let capture = SimpleCapture::new(display_id);
+    let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let running_clone = running.clone();
+
+    let capture_thread = thread::spawn(move || {
+        let mut sequence = 0u64;
+        let mut frame_count = 0;
+
+        while running_clone.load(std::sync::atomic::Ordering::Relaxed) {
+            match capture.capture_frame() {
+                Ok(image) => {
+                    frame_count += 1;
+                    // Just count frames - actual encoding would happen separately
+                    if frame_count % 30 == 0 {
+                        println!("Captured {} frames", frame_count);
+                    }
+                    thread::sleep(Duration::from_millis(33)); // ~30fps
+                }
+                Err(e) => {
+                    eprintln!("Capture error: {}", e);
+                    break;
+                }
+            }
+        }
+        frame_count
+    });
+
+    // Monitor encoded frames
+    let encoded_receiver = encoding_queue.encoded_receiver();
+    let stats_thread = thread::spawn(move || {
+        let mut encoded_count = 0;
+        let mut total_bytes = 0u64;
+        let start = std::time::Instant::now();
+
+        loop {
+            match encoded_receiver.try_recv() {
+                Ok(encoded_frame) => {
+                    encoded_count += 1;
+                    total_bytes += encoded_frame.data.len() as u64;
+
+                    if encoded_count % 30 == 0 {
+                        let elapsed = start.elapsed().as_secs_f64();
+                        let fps = encoded_count as f64 / elapsed;
+                        let avg_size = total_bytes as f64 / encoded_count as f64;
+                        let bitrate = (total_bytes as f64 * 8.0) / elapsed / 1_000_000.0;
+
+                        println!(
+                            "Encoded {} frames | {:.1} fps | avg {:.1} KB/frame | {:.2} Mbps",
+                            encoded_count,
+                            fps,
+                            avg_size / 1000.0,
+                            bitrate
+                        );
+                    }
+                }
+                Err(_) => {
+                    thread::sleep(Duration::from_millis(10));
+                }
+            }
+
+            if start.elapsed().as_secs() >= 11 {
+                break;
+            }
+        }
+
+        (encoded_count, total_bytes)
+    });
+
+    // Wait for test duration
+    thread::sleep(Duration::from_secs(10));
+    running.store(false, std::sync::atomic::Ordering::Relaxed);
+
+    // Wait for threads
+    let captured_frames = capture_thread.join().unwrap();
+    thread::sleep(Duration::from_millis(500));
+    let (encoded_count, total_bytes) = stats_thread.join().unwrap();
+
+    // Print final statistics
+    println!("\n=== Encoding Test Results ===");
+    println!("Total frames captured: {}", captured_frames);
+    println!("Total frames encoded: {}", encoded_count);
+    println!("Total data: {:.2} MB", total_bytes as f64 / 1_000_000.0);
+
+    if encoded_count > 0 {
+        let avg_frame_size = total_bytes as f64 / encoded_count as f64;
+        println!("Average frame size: {:.2} KB", avg_frame_size / 1000.0);
+    }
+
+    let queue_stats = encoding_queue.stats();
+    println!("\nQueue Statistics:");
+    println!("  Frames queued: {}", queue_stats.frames_queued);
+    println!("  Frames encoded: {}", queue_stats.frames_encoded);
+    println!("  Frames dropped: {}", queue_stats.frames_dropped);
+
+    if queue_stats.frames_queued > 0 {
+        let drop_rate =
+            queue_stats.frames_dropped as f64 / queue_stats.frames_queued as f64 * 100.0;
+        println!("  Drop rate: {:.2}%", drop_rate);
+    }
+
+    println!("\nNote: This test demonstrates the queue infrastructure.");
+    println!("In production, capture and encode would be fully connected.");
+    println!("\nEncoding test completed!");
+}
+
+fn test_encoding_performance() {
+    let main_display = CGDisplay::main();
+    let display_id = main_display.id;
+    let bounds = main_display.bounds();
+    let width = bounds.size.width as usize;
+    let height = bounds.size.height as usize;
+
+    println!("Benchmarking encoding performance at {}x{}", width, height);
+
+    // Capture a sample frame
+    let capture = SimpleCapture::new(display_id);
+    let image = match capture.capture_frame() {
+        Ok(img) => img,
+        Err(e) => {
+            eprintln!("Failed to capture frame: {}", e);
+            return;
+        }
+    };
+
+    let rgb_data = match image.to_rgb() {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!("Failed to convert to RGB: {}", e);
+            return;
+        }
+    };
+
+    // Test different quality levels
+    let qualities = vec![
+        ("Low", EncoderQuality::Low),
+        ("Medium", EncoderQuality::Medium),
+        ("High", EncoderQuality::High),
+        ("Ultra", EncoderQuality::Ultra),
+    ];
+
+    println!(
+        "\n{:<10} | {:>10} | {:>12} | {:>12} | {:>10}",
+        "Quality", "Encode (ms)", "Size (KB)", "Bitrate", "Target FPS"
+    );
+    println!("{}", "-".repeat(70));
+
+    for (name, quality) in qualities {
+        let config = EncoderConfig::new(width, height)
+            .with_fps(30.0)
+            .with_quality(quality)
+            .with_low_latency(true);
+
+        let mut encoder = match encoder::H264Encoder::new(config) {
+            Ok(enc) => enc,
+            Err(e) => {
+                eprintln!("Failed to create encoder: {}", e);
+                continue;
+            }
+        };
+
+        // Encode 10 frames
+        let mut encode_times = Vec::new();
+        let mut frame_sizes = Vec::new();
+
+        for i in 0..10 {
+            let timestamp = std::time::Instant::now();
+            match encoder.encode_rgb(&rgb_data, timestamp) {
+                Ok(encoded) => {
+                    encode_times.push(encoded.encode_duration.as_secs_f64() * 1000.0);
+                    frame_sizes.push(encoded.data.len());
+
+                    if i == 0 {
+                        println!(
+                            "  First frame: {} bytes (keyframe: {})",
+                            encoded.data.len(),
+                            encoded.is_keyframe
+                        );
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Encoding error: {}", e);
+                    break;
+                }
+            }
+        }
+
+        if !encode_times.is_empty() {
+            let avg_encode_time = encode_times.iter().sum::<f64>() / encode_times.len() as f64;
+            let avg_frame_size =
+                frame_sizes.iter().sum::<usize>() as f64 / frame_sizes.len() as f64;
+            let bitrate_mbps = (avg_frame_size * 8.0 * 30.0) / 1_000_000.0; // At 30 fps
+            let max_fps = 1000.0 / avg_encode_time;
+
+            println!(
+                "{:<10} | {:>10.2} | {:>12.2} | {:>9.2} Mbps | {:>10.1}",
+                name,
+                avg_encode_time,
+                avg_frame_size / 1000.0,
+                bitrate_mbps,
+                max_fps
+            );
+        }
+    }
+
+    println!("\nBenchmark completed!");
 }
