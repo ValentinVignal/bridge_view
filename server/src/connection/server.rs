@@ -8,9 +8,7 @@ use tokio::sync::Mutex;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
 
-use crate::proto::{
-    ClientRegistration, ControlMessage, ControlResponse, DisplayConfig, VideoFrame,
-};
+use crate::proto::{ClientRegistration, ControlMessage, ControlResponse};
 
 use super::manager::ConnectionManager;
 
@@ -122,11 +120,9 @@ impl WebSocketServer {
                                             timestamp_us: 0,
                                         };
                                         let mut w = write.lock().await;
-                                        w.send(WsMessage::Binary(
-                                            response.encode_to_vec().into(),
-                                        ))
-                                        .await
-                                        .ok();
+                                        w.send(WsMessage::Binary(response.encode_to_vec().into()))
+                                            .await
+                                            .ok();
                                         return Err(e.into());
                                     }
                                 }
@@ -162,6 +158,25 @@ impl WebSocketServer {
             addr, session_id
         );
 
+        // Register a per-client frame sender and spawn a writer task
+        // that forwards encoded frames to the WebSocket.
+        let mut frame_rx = manager.register_frame_sender(&session_id).await;
+        let write_for_frames = write.clone();
+        let session_for_writer = session_id.clone();
+        let frame_writer_handle = tokio::spawn(async move {
+            while let Some(frame_bytes) = frame_rx.recv().await {
+                let mut w = write_for_frames.lock().await;
+                if let Err(e) = w.send(WsMessage::Binary(frame_bytes.into())).await {
+                    warn!(
+                        "Failed to write frame to session {}: {}",
+                        session_for_writer, e
+                    );
+                    break;
+                }
+            }
+            info!("Frame writer task ended for session {}", session_for_writer);
+        });
+
         // Phase 2: Handle ongoing messages (control messages, heartbeats)
         loop {
             match read.next().await {
@@ -196,8 +211,9 @@ impl WebSocketServer {
                                 };
 
                                 let mut w = write.lock().await;
-                                if let Err(e) =
-                                    w.send(WsMessage::Binary(response.encode_to_vec().into())).await
+                                if let Err(e) = w
+                                    .send(WsMessage::Binary(response.encode_to_vec().into()))
+                                    .await
                                 {
                                     error!("Failed to send control response: {}", e);
                                     break;
@@ -247,25 +263,13 @@ impl WebSocketServer {
         }
 
         // Clean up
+        frame_writer_handle.abort();
+        manager.remove_frame_sender(&session_id).await;
         manager
             .disconnect_client(&session_id, "Connection closed")
             .await
             .ok();
 
-        Ok(())
-    }
-
-    /// Send a video frame to a specific client
-    /// This is intended to be called externally by the frame streaming pipeline
-    pub async fn send_frame_to_client(
-        manager: &ConnectionManager,
-        session_id: &str,
-        frame: &VideoFrame,
-    ) -> Result<(), String> {
-        // This is a placeholder - actual frame sending will be connected
-        // in Step 3.2 when we implement the frame streaming pipeline.
-        // The WebSocket write half needs to be stored per-client for this to work.
-        manager.record_frame_sent(session_id).await;
         Ok(())
     }
 }

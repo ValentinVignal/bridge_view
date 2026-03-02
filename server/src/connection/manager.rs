@@ -1,17 +1,21 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use log::{info, warn};
-use tokio::sync::{Mutex, broadcast};
+use log::{error, info, warn};
+use prost::Message;
+use tokio::sync::{Mutex, broadcast, mpsc};
 
-use crate::proto::{ClientRegistration, ControlMessageType, DisplayConfig};
+use crate::encoder::EncodedFrame;
+use crate::proto::{ClientRegistration, ControlMessageType, DisplayConfig, FrameType, VideoFrame};
 
-use super::types::{ClientConnection, ClientState, ConnectionEvent, ServerConfig};
+use super::types::{ClientConnection, ClientState, ServerConfig};
 
 /// Manages all client connections and their state
 pub struct ConnectionManager {
     /// Connected clients keyed by session_id
     clients: Arc<Mutex<HashMap<String, ClientConnection>>>,
+    /// Per-client frame senders for streaming encoded frames
+    frame_senders: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<Vec<u8>>>>>,
     /// Server configuration
     config: ServerConfig,
     /// Channel for broadcasting connection events
@@ -24,6 +28,7 @@ impl ConnectionManager {
         let (event_sender, _) = broadcast::channel(64);
         Self {
             clients: Arc::new(Mutex::new(HashMap::new())),
+            frame_senders: Arc::new(Mutex::new(HashMap::new())),
             config,
             event_sender,
         }
@@ -243,5 +248,102 @@ impl ConnectionManager {
         if let Some(client) = clients.get_mut(session_id) {
             client.frames_sent += 1;
         }
+    }
+
+    /// Register a per-client frame sender channel.
+    /// Returns the receiving end for the connection handler to consume.
+    pub async fn register_frame_sender(
+        &self,
+        session_id: &str,
+    ) -> mpsc::UnboundedReceiver<Vec<u8>> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let mut senders = self.frame_senders.lock().await;
+        senders.insert(session_id.to_string(), tx);
+        info!("Frame sender registered for session {}", session_id);
+        rx
+    }
+
+    /// Remove a per-client frame sender (called on disconnect).
+    pub async fn remove_frame_sender(&self, session_id: &str) {
+        let mut senders = self.frame_senders.lock().await;
+        senders.remove(session_id);
+        info!("Frame sender removed for session {}", session_id);
+    }
+
+    /// Broadcast an encoded frame to all active clients.
+    /// Converts the EncodedFrame into a protobuf VideoFrame and sends to each client.
+    /// Returns the number of clients the frame was successfully sent to.
+    pub async fn broadcast_frame(
+        &self,
+        encoded_frame: &EncodedFrame,
+        width: u32,
+        height: u32,
+    ) -> usize {
+        // Build the protobuf VideoFrame
+        let video_frame = VideoFrame {
+            sequence_number: encoded_frame.sequence,
+            timestamp_us: encoded_frame.timestamp.elapsed().as_micros() as u64, // relative timestamp
+            frame_data: encoded_frame.data.clone(),
+            frame_type: if encoded_frame.is_keyframe {
+                FrameType::Keyframe as i32
+            } else {
+                FrameType::Delta as i32
+            },
+            width,
+            height,
+        };
+
+        let frame_bytes = video_frame.encode_to_vec();
+
+        let active_sessions = self.active_sessions().await;
+        let senders = self.frame_senders.lock().await;
+
+        let mut sent_count = 0;
+        let mut failed_sessions = Vec::new();
+
+        for session_id in &active_sessions {
+            if let Some(sender) = senders.get(session_id) {
+                match sender.send(frame_bytes.clone()) {
+                    Ok(_) => {
+                        sent_count += 1;
+                    }
+                    Err(_) => {
+                        // Channel closed — client disconnected
+                        warn!(
+                            "Failed to send frame to session {} (channel closed)",
+                            session_id
+                        );
+                        failed_sessions.push(session_id.clone());
+                    }
+                }
+            }
+        }
+
+        // Update frame counters for successfully sent frames
+        if sent_count > 0 {
+            let mut clients = self.clients.lock().await;
+            for session_id in &active_sessions {
+                if let Some(client) = clients.get_mut(session_id) {
+                    if !failed_sessions.contains(session_id) {
+                        client.frames_sent += 1;
+                    }
+                }
+            }
+        }
+
+        // Schedule cleanup of failed sessions (don't hold lock)
+        drop(senders);
+        for session_id in failed_sessions {
+            error!(
+                "Auto-disconnecting session {} due to send failure",
+                session_id
+            );
+            self.disconnect_client(&session_id, "Frame send failed — channel closed")
+                .await
+                .ok();
+            self.remove_frame_sender(&session_id).await;
+        }
+
+        sent_count
     }
 }

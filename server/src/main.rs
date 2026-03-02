@@ -9,7 +9,7 @@ mod encoder;
 mod proto;
 
 use capture::{CaptureConfig, DisplayCapture, SimpleCapture};
-use connection::{ConnectionManager, ServerConfig, WebSocketServer};
+use connection::{ConnectionManager, FrameStreamer, ServerConfig, StreamingConfig, WebSocketServer};
 use encoder::{
     EncoderConfig, EncoderQuality, EncodingQueue, FrameEncoder, QueueConfig, QueuedFrame,
 };
@@ -48,9 +48,22 @@ fn run_server() {
     let manager = Arc::new(ConnectionManager::new(config));
     let server = WebSocketServer::new(manager.clone());
 
+    // Configure frame streaming
+    let streaming_config = StreamingConfig::default();
+    println!("Streaming configuration:");
+    println!("  Target FPS: {}", streaming_config.target_fps);
+    println!("  Display ID: {}", streaming_config.display_id);
+    println!("  Max queue: {}", streaming_config.max_queue_size);
+    println!();
+
+    let streamer = FrameStreamer::new(streaming_config, manager.clone());
+
     // Run the async server
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
     rt.block_on(async {
+        // Start the frame streaming pipeline (runs on a background thread)
+        let mut streamer_handle = streamer.start();
+
         // Spawn a task to periodically print connection status
         let manager_status = manager.clone();
         tokio::spawn(async move {
@@ -68,6 +81,9 @@ fn run_server() {
         if let Err(e) = server.run().await {
             log::error!("Server error: {}", e);
         }
+
+        // Stop streamer if server exits
+        streamer_handle.stop();
     });
 }
 

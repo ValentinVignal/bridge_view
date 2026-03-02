@@ -101,11 +101,25 @@ Create a multi-device display extension system that allows 2 Android phones and 
 
 ### Step 3.2: Frame Streaming
 
-- [ ] Stream encoded frames to connected clients
-- [ ] Implement frame buffering and queue management
-- [ ] Add frame sequencing and timestamps
-- [ ] Handle client disconnection gracefully
-- [ ] Add basic error handling and logging
+- [x] Stream encoded frames to connected clients
+- [x] Implement frame buffering and queue management
+- [x] Add frame sequencing and timestamps
+- [x] Handle client disconnection gracefully
+- [x] Add basic error handling and logging
+
+**Implementation Details:**
+
+- Created `FrameStreamer` in `connection/streaming.rs` — orchestrates capture → encode → broadcast pipeline
+- Runs on a background thread, capturing display frames at configurable FPS using `SimpleCapture`
+- Feeds captured frames into the `EncodingQueue` for H.264 encoding in a separate worker thread
+- Drains encoded frames and broadcasts them to all active clients as protobuf `VideoFrame` messages
+- Per-client frame delivery via `tokio::sync::mpsc::UnboundedSender<Vec<u8>>` channels registered in `ConnectionManager`
+- Each WebSocket connection spawns a dedicated frame-writer task that reads from the per-client channel and writes binary WebSocket messages
+- `ConnectionManager::broadcast_frame()` converts `EncodedFrame` to protobuf `VideoFrame` with sequence numbers, timestamps, frame type (Keyframe/Delta), and resolution
+- Automatic cleanup: failed sends trigger client disconnection and frame sender removal
+- `StreamerHandle` provides `stop()` and `is_running()` for lifecycle management
+- Periodic stats logging (every 5s): captured/encoded/broadcast/dropped frame counts and active client count
+- `StreamingConfig` allows tuning target FPS, display ID, encoder quality, queue size, and drop-on-full behavior
 
 ### Step 3.3: USB-C Network Configuration
 
