@@ -1,16 +1,77 @@
 use core_graphics::display::CGDisplay;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 mod capture;
+mod connection;
 mod encoder;
+mod proto;
 
 use capture::{CaptureConfig, DisplayCapture, SimpleCapture};
+use connection::{ConnectionManager, ServerConfig, WebSocketServer};
 use encoder::{
     EncoderConfig, EncoderQuality, EncodingQueue, FrameEncoder, QueueConfig, QueuedFrame,
 };
 
 fn main() {
+    // Initialize logger
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp_millis()
+        .init();
+
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() > 1 && args[1] == "--server" {
+        // Run in server mode - start WebSocket server
+        run_server();
+    } else {
+        // Run legacy tests
+        run_tests();
+    }
+}
+
+fn run_server() {
+    println!("Bridge View Server - Starting WebSocket Server\n");
+
+    let config = ServerConfig::default();
+    println!("Server configuration:");
+    println!("  Bind address: {}", config.listen_addr());
+    println!("  Max clients: {}", config.max_clients);
+    println!(
+        "  Heartbeat interval: {}s",
+        config.heartbeat_interval_secs
+    );
+    println!("  Heartbeat timeout: {}s", config.heartbeat_timeout_secs);
+    println!();
+
+    let manager = Arc::new(ConnectionManager::new(config));
+    let server = WebSocketServer::new(manager.clone());
+
+    // Run the async server
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    rt.block_on(async {
+        // Spawn a task to periodically print connection status
+        let manager_status = manager.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                let count = manager_status.client_count().await;
+                let summary = manager_status.client_summary().await;
+                log::info!("Connected clients: {}", count);
+                for (session_id, desc, state) in &summary {
+                    log::info!("  [{}] {} - {}", session_id, desc, state);
+                }
+            }
+        });
+
+        if let Err(e) = server.run().await {
+            log::error!("Server error: {}", e);
+        }
+    });
+}
+
+fn run_tests() {
     println!("Bridge View Server - Display Capture Test\n");
 
     // Detect all connected displays

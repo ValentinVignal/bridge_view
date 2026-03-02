@@ -81,11 +81,23 @@ Create a multi-device display extension system that allows 2 Android phones and 
 
 ### Step 3.1: Connection Manager
 
-- [ ] Implement WebSocket server using `tokio-tungstenite`
-- [ ] Add client connection handling
-- [ ] Implement client registration and handshake
-- [ ] Assign virtual displays to clients
-- [ ] Add connection state management
+- [x] Implement WebSocket server using `tokio-tungstenite`
+- [x] Add client connection handling
+- [x] Implement client registration and handshake
+- [x] Assign virtual displays to clients
+- [x] Add connection state management
+
+**Implementation Details:**
+
+- Used `tokio-tungstenite` for async WebSocket server on `tokio` runtime
+- Created `connection` module with `types`, `manager`, and `server` submodules
+- `ConnectionManager` handles client registration, heartbeat tracking, and state management
+- `WebSocketServer` listens on `0.0.0.0:9876`, accepts connections, and processes protobuf messages
+- Client registration flow: client sends `ClientRegistration` protobuf → server validates → assigns session ID and `DisplayConfig` → sends config back
+- Heartbeat monitoring with configurable interval and timeout (auto-disconnects stale clients)
+- Supports up to 3 simultaneous clients, each assigned a unique display position
+- Server mode launched with `cargo run -- --server`; legacy tests still available without flag
+- Added dependencies: `tokio`, `tokio-tungstenite`, `futures-util`, `prost`, `uuid`, `log`, `env_logger`
 
 ### Step 3.2: Frame Streaming
 
