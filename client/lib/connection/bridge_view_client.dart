@@ -73,9 +73,13 @@ class BridgeViewClient extends Notifier<BridgeViewClientState> {
 
       _sendRegistration();
       _listenToMessages();
+    } on WebSocketChannelException catch (e, s) {
+      _handleConnectionError('Connection failed: ${e.message}, $s');
     } on SocketException catch (e) {
       _handleConnectionError('Connection failed: ${e.message}');
-    } catch (e) {
+    } catch (e, s) {
+      print('stack');
+      print(s);
       _handleConnectionError('Connection failed: $e');
     }
   }

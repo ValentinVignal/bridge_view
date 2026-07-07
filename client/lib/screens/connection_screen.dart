@@ -203,12 +203,14 @@ class _ConnectionForm extends ConsumerStatefulWidget {
 }
 
 class __ConnectionFormState extends ConsumerState<_ConnectionForm> {
-  final _hostController = TextEditingController(text: 'localhost');
   final _portController = TextEditingController(text: '9876');
+  late final TextEditingController _hostController;
 
   @override
   void initState() {
     super.initState();
+    final host = ref.read(hostProvider);
+    _hostController = TextEditingController(text: host);
     _hostController.addListener(
       () => ref.read(hostProvider.notifier).state = _hostController.text.trim(),
     );
