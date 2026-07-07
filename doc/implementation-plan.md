@@ -134,11 +134,11 @@ Create a multi-device display extension system that allows 2 Android phones and 
 
 ### Step 4.1: Connection & Protocol
 
-- [ ] Implement WebSocket client in Flutter
-- [ ] Parse protobuf messages
-- [ ] Implement client registration flow
-- [ ] Add connection status UI
-- [ ] Handle reconnection logic
+- [x] Implement WebSocket client in Flutter
+- [x] Parse protobuf messages
+- [x] Implement client registration flow
+- [x] Add connection status UI
+- [x] Handle reconnection logic
 
 ### Step 4.2: Video Decoding & Rendering
 
