@@ -121,12 +121,80 @@ Create a multi-device display extension system that allows 2 Android phones and 
 - Periodic stats logging (every 5s): captured/encoded/broadcast/dropped frame counts and active client count
 - `StreamingConfig` allows tuning target FPS, display ID, encoder quality, queue size, and drop-on-full behavior
 
-### Step 3.3: USB-C Network Configuration
+### Step 3.3: Interactive Server CLI
 
-- [ ] Document USB networking setup for macOS
-- [ ] Test connectivity with Android over USB-C
-- [ ] Test connectivity with macOS over USB-C
-- [ ] Configure static IPs or mDNS discovery
+Add an interactive REPL to the server so the operator can manage devices without leaving the terminal.
+
+**Connection model per device type:**
+
+| Device type         | What operator does                          | What client user does                         | Host in Flutter app               |
+| ------------------- | ------------------------------------------- | --------------------------------------------- | --------------------------------- |
+| Android phone (USB) | `assign` → runs `adb reverse` automatically | Opens app, taps Connect                       | `localhost`                       |
+| Android emulator    | `assign` → runs `adb reverse` automatically | Opens app, taps Connect                       | `localhost`                       |
+| macOS (Thunderbolt) | `assign` → prints the Thunderbolt IP        | Types that IP in the host field, taps Connect | Thunderbolt IP e.g. `169.254.x.x` |
+
+> **Note:** macOS Thunderbolt uses a direct IP (not `localhost`) because the server already binds to
+> `0.0.0.0:9876` which includes the `bridge100` interface — no tunnel is needed. SSH port forwarding
+> was considered but rejected as unnecessary complexity for a direct physical cable connection.
+
+**Commands:**
+
+| Command             | Description                                                 |
+| ------------------- | ----------------------------------------------------------- |
+| `detect`            | Scan for connectable devices (ADB + Thunderbolt interfaces) |
+| `assign <id>`       | Set up connection for a device from the `detect` list       |
+| `status`            | Show currently connected clients and their state            |
+| `kick <session_id>` | Forcefully disconnect a client                              |
+| `help`              | List available commands                                     |
+| `quit`              | Stop the server gracefully                                  |
+
+**`detect` behaviour per device type:**
+
+- **Android phone (USB)**: Parse `adb devices -l` output; show serial + model name (`adb -s SERIAL shell getprop ro.product.model`); exclude devices whose session is already active in `ConnectionManager`
+- **Android emulator**: Same `adb devices` output; serial starts with `emulator-`; flag as emulator in the list
+- **macOS via Thunderbolt/USB-C**: Enumerate network interfaces using the `if_addrs` crate; look for `bridge1xx` interfaces with APIPA addresses (`169.254.x.x`) which macOS auto-creates when two Macs are connected directly via Thunderbolt/USB-C cable
+
+**`assign <id>` behaviour per device type:**
+
+- **Android phone/emulator**:
+  1. Run `adb -s <SERIAL> reverse tcp:9876 tcp:9876` on the Mac
+  2. Print: `✓ Port forwarding set up. Open bridge_view on the device and connect to localhost:9876`
+  3. The phone user does nothing special — `localhost` is the correct host
+- **macOS Thunderbolt**:
+  1. Print the Thunderbolt bridge IP (e.g. `169.254.x.x`) for the client Mac to use
+  2. Print: `→ Open bridge_view on the Mac and connect to <thunderbolt-ip>:9876`
+  3. The macOS client user enters that IP once in the host field
+
+**Example session:**
+
+```
+> detect
+Android (ADB):
+  [1] emulator-5554    Pixel 7 API 34         (emulator)
+  [2] R3CN10XXXXX      Samsung Galaxy S23     (not connected)
+Thunderbolt/USB-C:
+  [3] bridge100        169.254.100.2          (direct Mac-to-Mac)
+Already connected: (none)
+
+> assign 2
+✓ adb reverse tcp:9876 tcp:9876  [R3CN10XXXXX]
+→ Open bridge_view on the phone and connect to localhost:9876
+
+> assign 3
+→ Open bridge_view on the Mac and connect to 169.254.100.2:9876
+
+> status
+[session-abc]  flutter-android-...  Samsung Galaxy S23  Active
+[session-def]  flutter-macos-...    MacBook Pro         Registering
+```
+
+**Implementation notes:**
+
+- Read stdin in a background `tokio::spawn` task using `tokio::io::BufReader` over `tokio::io::stdin()`
+- Use `tokio::process::Command` (non-blocking) to invoke `adb` subcommands
+- Add `if_addrs` crate for network interface enumeration
+- Optionally add `rustyline` crate for readline history/tab-completion
+- `adb` must be installed and on `PATH` on the server Mac (part of Android SDK platform-tools)
 
 ---
 
