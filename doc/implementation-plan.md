@@ -196,6 +196,15 @@ Already connected: (none)
 - Optionally add `rustyline` crate for readline history/tab-completion
 - `adb` must be installed and on `PATH` on the server Mac (part of Android SDK platform-tools)
 
+**Implemented:**
+
+- Created `connection/cli.rs` with `run_cli(manager, shutdown_tx)` async function
+- `detect` enumerates ADB devices (serial + model via `ro.product.model`) and Thunderbolt bridge interfaces (169.254.x.x APIPA addresses on `bridge*` interfaces)
+- `assign <id>` runs `adb -s <SERIAL> reverse tcp:9876 tcp:9876` for Android or prints the Thunderbolt IP for macOS
+- `status` calls `ConnectionManager::client_summary()`; `kick <session_id>` calls `ConnectionManager::disconnect_client()`
+- CLI spawned as a `tokio::spawn` task; `quit` sends on a `oneshot` channel; `main.rs` uses `tokio::select!` to stop the server when the signal arrives
+- Added `if-addrs = "0.13"` to `Cargo.toml`
+
 ---
 
 ## Phase 4: Client - Basic Rendering (Day 6-7)

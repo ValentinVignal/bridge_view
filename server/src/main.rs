@@ -9,7 +9,9 @@ mod encoder;
 mod proto;
 
 use capture::{CaptureConfig, DisplayCapture, SimpleCapture};
-use connection::{ConnectionManager, FrameStreamer, ServerConfig, StreamingConfig, WebSocketServer};
+use connection::{
+    ConnectionManager, FrameStreamer, ServerConfig, StreamingConfig, WebSocketServer, run_cli,
+};
 use encoder::{
     EncoderConfig, EncoderQuality, EncodingQueue, FrameEncoder, QueueConfig, QueuedFrame,
 };
@@ -38,10 +40,7 @@ fn run_server() {
     println!("Server configuration:");
     println!("  Bind address: {}", config.listen_addr());
     println!("  Max clients: {}", config.max_clients);
-    println!(
-        "  Heartbeat interval: {}s",
-        config.heartbeat_interval_secs
-    );
+    println!("  Heartbeat interval: {}s", config.heartbeat_interval_secs);
     println!("  Heartbeat timeout: {}s", config.heartbeat_timeout_secs);
     println!();
 
@@ -64,25 +63,28 @@ fn run_server() {
         // Start the frame streaming pipeline (runs on a background thread)
         let mut streamer_handle = streamer.start();
 
-        // Spawn a task to periodically print connection status
-        let manager_status = manager.clone();
+        // Shutdown channel: the CLI sends () on `quit`; the server loop selects on it.
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
+        // Spawn the interactive CLI on a dedicated task
+        let cli_manager = manager.clone();
         tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-                let count = manager_status.client_count().await;
-                let summary = manager_status.client_summary().await;
-                log::info!("Connected clients: {}", count);
-                for (session_id, desc, state) in &summary {
-                    log::info!("  [{}] {} - {}", session_id, desc, state);
-                }
-            }
+            run_cli(cli_manager, shutdown_tx).await;
         });
 
-        if let Err(e) = server.run().await {
-            log::error!("Server error: {}", e);
+        // Run the WebSocket server until it errors or a shutdown is requested
+        tokio::select! {
+            result = server.run() => {
+                if let Err(e) = result {
+                    log::error!("Server error: {}", e);
+                }
+            }
+            _ = shutdown_rx => {
+                log::info!("Shutdown signal received — stopping server");
+            }
         }
 
-        // Stop streamer if server exits
+        // Stop the frame streaming pipeline
         streamer_handle.stop();
     });
 }
