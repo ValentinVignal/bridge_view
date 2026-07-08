@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Server",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin",
+                    "bridge_view_server"
+                ],
+                "filter": {
+                    "name": "bridge_view_server",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "--server"
+            ],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
