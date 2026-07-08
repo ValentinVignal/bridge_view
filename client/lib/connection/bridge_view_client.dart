@@ -50,13 +50,14 @@ class BridgeViewClient extends Notifier<BridgeViewClientState> {
   Timer? _heartbeatTimer;
   Timer? _reconnectTimer;
   StreamSubscription? _subscription;
-  bool _disposed = false;
+  bool _connected = false;
 
   final _frameController = StreamController<VideoFrame>.broadcast();
   Stream<VideoFrame> get frameStream => _frameController.stream;
 
   Future<void> connect() async {
-    if (_disposed) return;
+    if (_connected) return;
+    _connected = true;
     state = state.copyWith(
       status: ConnectionStatus.connecting,
       errorMessage: null,
@@ -112,7 +113,7 @@ class BridgeViewClient extends Notifier<BridgeViewClientState> {
         _handleConnectionError('WebSocket error: $error');
       },
       onDone: () {
-        if (!_disposed && state.status != ConnectionStatus.disconnected) {
+        if (_connected && state.status != ConnectionStatus.disconnected) {
           _handleConnectionError('Connection closed by server');
         }
       },
@@ -178,7 +179,7 @@ class BridgeViewClient extends Notifier<BridgeViewClientState> {
     state = state.copyWith(errorMessage: message);
     _cleanup();
 
-    if (!_disposed && state.reconnectAttempts < maxReconnectAttempts) {
+    if (_connected && state.reconnectAttempts < maxReconnectAttempts) {
       state = state.copyWith(status: ConnectionStatus.reconnecting);
       _scheduleReconnect();
     } else {
@@ -190,14 +191,14 @@ class BridgeViewClient extends Notifier<BridgeViewClientState> {
     _reconnectTimer?.cancel();
     final delay = reconnectDelay * (state.reconnectAttempts + 1);
     _reconnectTimer = Timer(delay, () {
-      if (_disposed) return;
+      if (_connected) return;
       state = state.copyWith(reconnectAttempts: state.reconnectAttempts + 1);
       connect();
     });
   }
 
   Future<void> disconnect() async {
-    _disposed = false; // Allow reconnect after manual disconnect
+    _connected = false; // Allow reconnect after manual disconnect
     state = state.copyWith(
       reconnectAttempts: maxReconnectAttempts,
     ); // Prevent auto-reconnect
@@ -217,6 +218,7 @@ class BridgeViewClient extends Notifier<BridgeViewClientState> {
   }
 
   void _cleanup() {
+    _connected = false;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
     _reconnectTimer?.cancel();
@@ -245,7 +247,6 @@ class BridgeViewClient extends Notifier<BridgeViewClientState> {
   }
 
   void dispose() {
-    _disposed = true;
     _cleanup();
     _frameController.close();
   }
