@@ -14,7 +14,8 @@ final statusProvider = Provider.autoDispose<ConnectionStatus>(
 
 final hostProvider = StateProvider.autoDispose<String>((_) {
   return switch (defaultTargetPlatform) {
-    TargetPlatform.android => '10.0.2.2',
+    TargetPlatform.android =>
+      '10.0.2.2', // TODO: Detect if emulator => 10.0.2.2, else => localhost
     _ => 'localhost',
   };
 });
