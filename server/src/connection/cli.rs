@@ -42,7 +42,7 @@ pub async fn run_cli(manager: Arc<ConnectionManager>, shutdown_tx: oneshot::Send
                 let arg = parts.next().map(|s| s.trim());
 
                 match cmd {
-                    "detect" => {
+                    "detect" | "d" => {
                         detected = do_detect().await;
                     }
                     "assign" => match arg.and_then(|a| a.parse::<usize>().ok()) {
@@ -57,7 +57,7 @@ pub async fn run_cli(manager: Arc<ConnectionManager>, shutdown_tx: oneshot::Send
                             }
                         }
                     },
-                    "status" => {
+                    "status" | "s" => {
                         do_status(&manager).await;
                     }
                     "kick" => match arg {
@@ -72,8 +72,8 @@ pub async fn run_cli(manager: Arc<ConnectionManager>, shutdown_tx: oneshot::Send
                         }
                         None => println!("Usage: kick <session_id>"),
                     },
-                    "help" => print_help(),
-                    "quit" => {
+                    "help" | "h" => print_help(),
+                    "quit" | "q" => {
                         println!("Shutting down server…");
                         if let Some(tx) = shutdown_tx.take() {
                             let _ = tx.send(());
@@ -82,7 +82,7 @@ pub async fn run_cli(manager: Arc<ConnectionManager>, shutdown_tx: oneshot::Send
                     }
                     "" => {}
                     other => println!(
-                        "Unknown command: '{}'. Type `help` for available commands.",
+                        "Unknown command: '{}'. Type `help` or `h` for available commands.",
                         other
                     ),
                 }
