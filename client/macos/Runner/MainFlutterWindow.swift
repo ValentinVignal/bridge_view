@@ -8,6 +8,9 @@ class MainFlutterWindow: NSWindow {
     self.contentViewController = flutterViewController
     self.setFrame(windowFrame, display: true)
 
+    H264RendererPlugin.register(
+      with: flutterViewController.registrar(forPlugin: "H264RendererPlugin")!
+    )
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()

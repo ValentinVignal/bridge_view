@@ -219,11 +219,21 @@ Already connected: (none)
 
 ### Step 4.2: Video Decoding & Rendering
 
-- [ ] Integrate video player plugin
-- [ ] Decode H.264 stream
-- [ ] Render frames fullscreen
-- [ ] Optimize rendering performance
-- [ ] Add frame rate monitoring
+- [x] Integrate video player plugin
+- [x] Decode H.264 stream
+- [x] Render frames fullscreen
+- [x] Optimize rendering performance
+- [x] Add frame rate monitoring
+
+**Implementation Details:**
+
+- Used platform channels (`bridge_view/h264_renderer` MethodChannel) instead of a video player plugin for lower latency and direct hardware access
+- Android: `H264RendererPlugin` using `MediaCodec` (Annex-B → Surface); lazily initialised on first keyframe after extracting SPS/PPS as CSD
+- macOS: `H264RendererPlugin` using `VideoToolbox` (`VTDecompressionSession`); converts Annex-B to AVCC and outputs `kCVPixelFormatType_32BGRA` pixel buffers via Flutter `Texture`
+- `H264Renderer` Dart class wraps the method channel; `decodeFrame()` is fire-and-forget (no await) to keep the frame pipeline unblocked
+- `VideoDisplayWidget` subscribes to `BridgeViewClient.frameStream`, dispatches each frame to the native decoder, and renders via `Texture(textureId: ...)`
+- `DisplayScreen` takes over full-screen via `SystemUiMode.immersiveSticky`; navigated to automatically when `ConnectionStatus.connected`; pops back on disconnect
+- FPS monitoring: 1-second rolling window counter shown as an overlay in `VideoDisplayWidget`
 
 ### Step 4.3: Platform-Specific Setup
 

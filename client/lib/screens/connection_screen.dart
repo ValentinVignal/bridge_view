@@ -5,6 +5,7 @@ import '../connection/bridge_view_client.dart';
 import '../connection/connection_providers.dart';
 import '../connection/connection_state.dart';
 import '../widgets/theme_input.dart';
+import 'display_screen.dart';
 
 class ConnectionScreen extends ConsumerStatefulWidget {
   const ConnectionScreen({super.key});
@@ -16,6 +17,16 @@ class ConnectionScreen extends ConsumerStatefulWidget {
 class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
   @override
   Widget build(BuildContext context) {
+    ref.listen<ConnectionStatus>(statusProvider, (previous, next) {
+      if (next == ConnectionStatus.connected &&
+          previous != ConnectionStatus.connected &&
+          mounted) {
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute<void>(builder: (_) => const DisplayScreen()));
+      }
+    });
+
     final client = ref.watch(bridgeViewClientProvider);
 
     return Scaffold(

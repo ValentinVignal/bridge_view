@@ -78,9 +78,7 @@ class BridgeViewClient extends Notifier<BridgeViewClientState> {
       _handleConnectionError('Connection failed: ${e.message}, $s');
     } on SocketException catch (e) {
       _handleConnectionError('Connection failed: ${e.message}');
-    } catch (e, s) {
-      print('stack');
-      print(s);
+    } catch (e) {
       _handleConnectionError('Connection failed: $e');
     }
   }
