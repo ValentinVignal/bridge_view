@@ -7,8 +7,7 @@ import 'package:pigeon/pigeon.dart';
 @ConfigurePigeon(
   PigeonOptions(
     dartOut: 'lib/video/h264_renderer.g.dart',
-    kotlinOut:
-        'android/app/src/main/kotlin/com/example/bridge_view_client/H264Renderer.g.kt',
+    kotlinOut: 'android/app/src/main/kotlin/com/example/bridge_view_client/H264Renderer.g.kt',
     swiftOut: 'macos/Runner/H264Renderer.g.swift',
   ),
 )
