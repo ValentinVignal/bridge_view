@@ -1,10 +1,10 @@
 package com.example.bridge_view_client
 
+import H264RendererApi
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.view.Surface
 import io.flutter.embedding.engine.plugins.FlutterPlugin
-import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.view.TextureRegistry
 import java.nio.ByteBuffer
@@ -22,7 +22,7 @@ import java.nio.ByteBuffer
  * SPS/PPS from the Annex-B bit stream and supply them as codec-specific data (CSD),
  * which maximizes compatibility across Android devices.
  */
-class H264RendererPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
+class H264RendererPlugin : FlutterPlugin, H264RendererApi {
 
     private lateinit var channel: MethodChannel
     private lateinit var textureRegistry: TextureRegistry
@@ -41,61 +41,37 @@ class H264RendererPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         textureRegistry = binding.textureRegistry
-        channel = MethodChannel(binding.binaryMessenger, "bridge_view/h264_renderer")
-        channel.setMethodCallHandler(this)
+        H264RendererApi.setUp(binding.binaryMessenger, this)
+
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        channel.setMethodCallHandler(null)
+        H264RendererApi.setUp(binding.binaryMessenger, null)
         releaseCodec()
     }
 
-    // -------------------------------------------------------------------------
-    // MethodCallHandler
-    // -------------------------------------------------------------------------
-
-    override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        when (call.method) {
-            "initialize" -> {
-                val width = call.argument<Int>("width") ?: 1920
-                val height = call.argument<Int>("height") ?: 1080
-                result.success(initialize(width, height))
-            }
-            "decodeFrame" -> {
-                val data = call.argument<ByteArray>("frameData")
-                val isKeyframe = call.argument<Boolean>("isKeyframe") ?: false
-                if (data != null) decodeFrame(data, isKeyframe)
-                result.success(null)
-            }
-            "dispose" -> {
-                releaseCodec()
-                result.success(null)
-            }
-            else -> result.notImplemented()
-        }
-    }
 
     // -------------------------------------------------------------------------
     // Implementation
     // -------------------------------------------------------------------------
 
-    private fun initialize(width: Int, height: Int): Long {
+    override fun initialize(width: Long, height: Long): Long {
         releaseCodec()
-        pendingWidth = width
-        pendingHeight = height
+        pendingWidth = width.toInt()
+        pendingHeight = height.toInt()
         codecStarted = false
 
         val entry = textureRegistry.createSurfaceTexture()
-        entry.surfaceTexture().setDefaultBufferSize(width, height)
+        entry.surfaceTexture().setDefaultBufferSize(width.toInt(), height.toInt())
         textureEntry = entry
         surface = Surface(entry.surfaceTexture())
         return entry.id()
     }
 
-    private fun decodeFrame(data: ByteArray, isKeyframe: Boolean) {
+    override fun decodeFrame(frameData: ByteArray, isKeyframe: Boolean) {
         // Start the codec lazily on the first keyframe so we have SPS/PPS.
         if (!codecStarted && isKeyframe) {
-            startCodec(data)
+            startCodec(frameData)
         }
         val c = codec ?: return
 
@@ -103,7 +79,8 @@ class H264RendererPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         if (inputIdx >= 0) {
             val buf = c.getInputBuffer(inputIdx) ?: return
             buf.clear()
-            val frameToWrite = if (data.size <= buf.capacity()) data else data.copyOfRange(0, buf.capacity())
+            val frameToWrite =
+                if (frameData.size <= buf.capacity()) frameData else frameData.copyOfRange(0, buf.capacity())
             buf.put(frameToWrite)
             val flags = if (isKeyframe) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
             c.queueInputBuffer(inputIdx, 0, frameToWrite.size, System.nanoTime() / 1_000L, flags)
@@ -145,11 +122,14 @@ class H264RendererPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         }
     }
 
+    override fun dispose() { releaseCodec() }
+
     private fun releaseCodec() {
         try {
             codec?.stop()
             codec?.release()
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
         codec = null
         codecStarted = false
 

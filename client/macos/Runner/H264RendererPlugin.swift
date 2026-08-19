@@ -29,7 +29,6 @@ private final class H264DecoderTexture: NSObject, FlutterTexture {
 
 /// Flutter plugin that exposes hardware H.264 decoding via macOS VideoToolbox.
 ///
-/// Channel: "bridge_view/h264_renderer"
 /// Methods:
 ///   initialize(width: Int, height: Int) -> Int64  (Flutter texture ID)
 ///   decodeFrame(frameData: FlutterStandardTypedData, isKeyframe: Bool) -> null
@@ -38,19 +37,15 @@ private final class H264DecoderTexture: NSObject, FlutterTexture {
 /// Frames must be supplied in H.264 Annex-B format (start-code prefixed).
 /// The plugin extracts SPS/PPS from the first keyframe to build the
 /// CMVideoFormatDescription required by VTDecompressionSession.
-final class H264RendererPlugin: NSObject, FlutterPlugin {
+final class H264RendererPlugin: NSObject, FlutterPlugin, H264RendererApi{
 
     // -------------------------------------------------------------------------
     // Registration
     // -------------------------------------------------------------------------
 
     static func register(with registrar: FlutterPluginRegistrar) {
-        let channel = FlutterMethodChannel(
-            name: "bridge_view/h264_renderer",
-            binaryMessenger: registrar.messenger
-        )
         let instance = H264RendererPlugin(textureRegistry: registrar.textures)
-        registrar.addMethodCallDelegate(instance, channel: channel)
+        H264RendererApiSetup.setUp(binaryMessenger: registrar.messenger, api: instance)
     }
 
     // -------------------------------------------------------------------------
@@ -77,51 +72,15 @@ final class H264RendererPlugin: NSObject, FlutterPlugin {
     private init(textureRegistry: FlutterTextureRegistry) {
         self.textureRegistry = textureRegistry
     }
-
-    // -------------------------------------------------------------------------
-    // FlutterPlugin
-    // -------------------------------------------------------------------------
-
-    func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        switch call.method {
-        case "initialize":
-            guard let args = call.arguments as? [String: Any],
-                  let width = args["width"] as? Int,
-                  let height = args["height"] as? Int
-            else {
-                result(FlutterError(code: "INVALID_ARGS", message: "width/height required", details: nil))
-                return
-            }
-            result(initialize(width: Int32(width), height: Int32(height)))
-
-        case "decodeFrame":
-            guard let args = call.arguments as? [String: Any],
-                  let typedData = args["frameData"] as? FlutterStandardTypedData
-            else {
-                result(nil)
-                return
-            }
-            let isKeyframe = args["isKeyframe"] as? Bool ?? false
-            decodeFrame(typedData.data, isKeyframe: isKeyframe)
-            result(nil)
-
-        case "dispose":
-            releaseSession()
-            result(nil)
-
-        default:
-            result(FlutterMethodNotImplemented)
-        }
-    }
-
+    
     // -------------------------------------------------------------------------
     // Implementation
     // -------------------------------------------------------------------------
 
-    private func initialize(width: Int32, height: Int32) -> Int64 {
+    func initialize(width: Int64, height: Int64) throws -> Int64 {
         releaseSession()
-        pendingWidth = width
-        pendingHeight = height
+        pendingWidth = Int32(width)
+        pendingHeight = Int32(height)
 
         let tex = H264DecoderTexture()
         texture = tex
@@ -129,13 +88,13 @@ final class H264RendererPlugin: NSObject, FlutterPlugin {
         return textureId
     }
 
-    private func decodeFrame(_ data: Data, isKeyframe: Bool) {
+    func decodeFrame(frameData: FlutterStandardTypedData, isKeyframe: Bool) throws {
         if isKeyframe && session == nil {
-            setupSession(from: data)
+            setupSession(from: frameData.data)
         }
         guard let sess = session, let formatDesc = formatDescription else { return }
 
-        guard let sampleBuffer = makeSampleBuffer(from: data, formatDescription: formatDesc) else {
+        guard let sampleBuffer = makeSampleBuffer(from: frameData.data, formatDescription: formatDesc) else {
             return
         }
 
@@ -147,6 +106,10 @@ final class H264RendererPlugin: NSObject, FlutterPlugin {
             frameRefcon: nil,
             infoFlagsOut: &infoFlags
         )
+    }
+
+    func dispose() throws {
+        releaseSession()
     }
 
     // -------------------------------------------------------------------------
