@@ -1,7 +1,6 @@
 import 'package:bridge_view_client/connection/bridge_view_client.dart';
 import 'package:bridge_view_client/proto/proto/display.pb.dart';
 import 'package:bridge_view_client/utils/state_provider.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web_socket_channel/io.dart';
 
@@ -13,11 +12,8 @@ final statusProvider = Provider.autoDispose<ConnectionStatus>(
 );
 
 final hostProvider = StateProvider.autoDispose<String>((_) {
-  return switch (defaultTargetPlatform) {
-    TargetPlatform.android =>
-      '10.0.2.2', // TODO: Detect if emulator => 10.0.2.2, else => localhost
-    _ => 'localhost',
-  };
+  // On android emulator, can be changed to 10.0.2.2
+  return 'localhost';
 });
 
 final portProvider = StateProvider.autoDispose<int>((_) => 9876);

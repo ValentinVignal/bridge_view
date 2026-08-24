@@ -79,7 +79,7 @@ class H264RendererApi {
   /// Lifecycle: call [initialize] once, [decodeFrame] for each incoming frame,
   /// and [dispose] when the session ends.
   Future<int> initialize(int width, int height) async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.bridge_view_client.H264RendererApi.initialize$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName = 'dev.flutter.pigeon.bridge_view.H264RendererApi.initialize$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -101,7 +101,7 @@ class H264RendererApi {
   ///
   /// Fire-and-forget: do not await this in the frame callback.
   Future<void> decodeFrame(Uint8List frameData, {bool isKeyframe = false}) async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.bridge_view_client.H264RendererApi.decodeFrame$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName = 'dev.flutter.pigeon.bridge_view.H264RendererApi.decodeFrame$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -120,7 +120,63 @@ class H264RendererApi {
 
   /// Releases the native decoder and unregisters the Flutter texture.
   Future<void> dispose() async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.bridge_view_client.H264RendererApi.dispose$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName = 'dev.flutter.pigeon.bridge_view.H264RendererApi.dispose$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+}
+
+/// Platform-channel bridge for native window management.
+///
+/// macOS only: the Flutter window doesn't expose a way to enter/exit
+/// fullscreen from Dart, so this delegates to `NSWindow.toggleFullScreen`.
+class WindowControlApi {
+  /// Constructor for [WindowControlApi]. The [binaryMessenger] named argument is
+  /// available for dependency injection. If it is left null, the default
+  /// BinaryMessenger will be used which routes to the host platform.
+  WindowControlApi({BinaryMessenger? binaryMessenger, String messageChannelSuffix = ''})
+      : pigeonVar_binaryMessenger = binaryMessenger,
+        pigeonVar_messageChannelSuffix = messageChannelSuffix.isNotEmpty ? '.$messageChannelSuffix' : '';
+  final BinaryMessenger? pigeonVar_binaryMessenger;
+
+  static const MessageCodec<Object?> pigeonChannelCodec = _PigeonCodec();
+
+  final String pigeonVar_messageChannelSuffix;
+
+  /// Puts the native window into fullscreen mode if it isn't already.
+  Future<void> enterFullScreen() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.bridge_view.WindowControlApi.enterFullScreen$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  /// Takes the native window out of fullscreen mode if it is currently in it.
+  Future<void> exitFullScreen() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.bridge_view.WindowControlApi.exitFullScreen$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,

@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 
-import 'h264_renderer.g.dart';
+import '../platform/native_apis.g.dart';
 
 class H264Renderer extends H264RendererApi {
   int? _textureId;

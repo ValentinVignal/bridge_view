@@ -39,6 +39,7 @@ dependencies:
   material_ui: ^1.0.0
   protobuf: ^6.0.0
   riverpod: ^3.3.2
+  wakelock_plus: ^1.7.0
   web_socket_channel: ^3.0.3
 
 dev_dependencies:

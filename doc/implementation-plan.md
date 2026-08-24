@@ -237,11 +237,20 @@ Already connected: (none)
 
 ### Step 4.3: Platform-Specific Setup
 
-- [ ] Configure Android fullscreen mode
-- [ ] Configure macOS fullscreen window
-- [ ] Handle device rotation (Android)
-- [ ] Disable sleep/screen timeout
-- [ ] Add wake lock functionality
+- [x] Configure Android fullscreen mode
+- [x] Configure macOS fullscreen window
+- [x] Handle device rotation (Android)
+- [x] Disable sleep/screen timeout
+- [x] Add wake lock functionality
+
+**Implementation Details:**
+
+- `DisplayScreen` already hid system UI via `SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky)`; added `android:windowLayoutInDisplayCutoutMode="shortEdges"` to both `styles.xml` variants so fullscreen video also extends under notches/cutouts
+- Added `wakelock_plus`: `WakelockPlus.enable()` on entering `DisplayScreen`, `WakelockPlus.disable()` on dispose, keeping the screen awake only while actively displaying
+- Android rotation: `DisplayScreen` locks `SystemChrome.setPreferredOrientations(...)` to landscape or portrait based on the assigned `DisplayConfig` aspect ratio once the config arrives, and resets to unrestricted on dispose
+- macOS fullscreen window: added a new Pigeon `HostApi` (`WindowControlApi`) with `enterFullScreen()`/`exitFullScreen()`, implemented in `WindowControlPlugin.swift` by toggling `NSWindow.toggleFullScreen`; `DisplayScreen` calls it (guarded by `defaultTargetPlatform == TargetPlatform.macOS`) on enter/exit
+- Merged the `H264RendererApi` and `WindowControlApi` Pigeon definitions into a single `pigeons/native_apis.dart` → `lib/platform/native_apis.g.dart` / `macos/Runner/NativeApis.g.swift` / Kotlin output, since separate Pigeon-generated Swift files sharing a compile target collide on top-level helper declarations (`PigeonError`, etc.)
+- Fixed a pre-existing gap where native macOS Swift files (H264 renderer plugin and its Pigeon output) were never added to `Runner.xcodeproj`'s build phase, so `flutter build macos` was silently not compiling them; wired all native Swift sources into the Xcode project
 
 ---
 

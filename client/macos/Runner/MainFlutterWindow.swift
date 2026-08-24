@@ -9,7 +9,11 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     H264RendererPlugin.register(
-      with: flutterViewController.registrar(forPlugin: "H264RendererPlugin")!
+      with: flutterViewController.registrar(forPlugin: "H264RendererPlugin")
+    )
+    WindowControlPlugin.register(
+      with: flutterViewController.registrar(forPlugin: "WindowControlPlugin"),
+      window: self
     )
     RegisterGeneratedPlugins(registry: flutterViewController)
 

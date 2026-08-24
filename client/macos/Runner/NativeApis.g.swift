@@ -55,7 +55,7 @@ private func wrapError(_ error: Any) -> [Any?] {
   ]
 }
 
-enum H264RendererPigeonInternal {
+enum NativeApisPigeonInternal {
   static func isNullish(_ value: Any?) -> Bool {
     guard let innerValue = value else {
       return true
@@ -75,24 +75,24 @@ private func nilOrValue<T>(_ value: Any?) -> T? {
 }
 
 
-private class H264RendererPigeonCodecReader: FlutterStandardReader {
+private class NativeApisPigeonCodecReader: FlutterStandardReader {
 }
 
-private class H264RendererPigeonCodecWriter: FlutterStandardWriter {
+private class NativeApisPigeonCodecWriter: FlutterStandardWriter {
 }
 
-private class H264RendererPigeonCodecReaderWriter: FlutterStandardReaderWriter {
+private class NativeApisPigeonCodecReaderWriter: FlutterStandardReaderWriter {
   override func reader(with data: Data) -> FlutterStandardReader {
-    return H264RendererPigeonCodecReader(data: data)
+    return NativeApisPigeonCodecReader(data: data)
   }
 
   override func writer(with data: NSMutableData) -> FlutterStandardWriter {
-    return H264RendererPigeonCodecWriter(data: data)
+    return NativeApisPigeonCodecWriter(data: data)
   }
 }
 
-class H264RendererPigeonCodec: FlutterStandardMessageCodec, @unchecked Sendable {
-  static let shared = H264RendererPigeonCodec(readerWriter: H264RendererPigeonCodecReaderWriter())
+class NativeApisPigeonCodec: FlutterStandardMessageCodec, @unchecked Sendable {
+  static let shared = NativeApisPigeonCodec(readerWriter: NativeApisPigeonCodecReaderWriter())
 }
 
 /// Platform-channel bridge to the native H.264 hardware decoder.
@@ -117,7 +117,7 @@ protocol H264RendererApi {
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
 class H264RendererApiSetup {
-  static var codec: FlutterStandardMessageCodec { H264RendererPigeonCodec.shared }
+  static var codec: FlutterStandardMessageCodec { NativeApisPigeonCodec.shared }
   /// Sets up an instance of `H264RendererApi` to handle messages through the `binaryMessenger`.
   static func setUp(binaryMessenger: FlutterBinaryMessenger, api: H264RendererApi?, messageChannelSuffix: String = "") {
     let channelSuffix = messageChannelSuffix.count > 0 ? ".\(messageChannelSuffix)" : ""
@@ -125,7 +125,7 @@ class H264RendererApiSetup {
     ///
     /// Lifecycle: call [initialize] once, [decodeFrame] for each incoming frame,
     /// and [dispose] when the session ends.
-    let initializeChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bridge_view_client.H264RendererApi.initialize\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    let initializeChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bridge_view.H264RendererApi.initialize\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
       initializeChannel.setMessageHandler { message, reply in
         let args = message as! [Any?]
@@ -144,7 +144,7 @@ class H264RendererApiSetup {
     /// Pushes a raw H.264 Annex-B frame to the native decoder.
     ///
     /// Fire-and-forget: do not await this in the frame callback.
-    let decodeFrameChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bridge_view_client.H264RendererApi.decodeFrame\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    let decodeFrameChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bridge_view.H264RendererApi.decodeFrame\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
       decodeFrameChannel.setMessageHandler { message, reply in
         let args = message as! [Any?]
@@ -161,7 +161,7 @@ class H264RendererApiSetup {
       decodeFrameChannel.setMessageHandler(nil)
     }
     /// Releases the native decoder and unregisters the Flutter texture.
-    let disposeChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bridge_view_client.H264RendererApi.dispose\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    let disposeChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bridge_view.H264RendererApi.dispose\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
       disposeChannel.setMessageHandler { _, reply in
         do {
@@ -173,6 +173,55 @@ class H264RendererApiSetup {
       }
     } else {
       disposeChannel.setMessageHandler(nil)
+    }
+  }
+}
+/// Platform-channel bridge for native window management.
+///
+/// macOS only: the Flutter window doesn't expose a way to enter/exit
+/// fullscreen from Dart, so this delegates to `NSWindow.toggleFullScreen`.
+///
+/// Generated protocol from Pigeon that represents a handler of messages from Flutter.
+protocol WindowControlApi {
+  /// Puts the native window into fullscreen mode if it isn't already.
+  func enterFullScreen() throws
+  /// Takes the native window out of fullscreen mode if it is currently in it.
+  func exitFullScreen() throws
+}
+
+/// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
+class WindowControlApiSetup {
+  static var codec: FlutterStandardMessageCodec { NativeApisPigeonCodec.shared }
+  /// Sets up an instance of `WindowControlApi` to handle messages through the `binaryMessenger`.
+  static func setUp(binaryMessenger: FlutterBinaryMessenger, api: WindowControlApi?, messageChannelSuffix: String = "") {
+    let channelSuffix = messageChannelSuffix.count > 0 ? ".\(messageChannelSuffix)" : ""
+    /// Puts the native window into fullscreen mode if it isn't already.
+    let enterFullScreenChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bridge_view.WindowControlApi.enterFullScreen\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      enterFullScreenChannel.setMessageHandler { _, reply in
+        do {
+          try api.enterFullScreen()
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      enterFullScreenChannel.setMessageHandler(nil)
+    }
+    /// Takes the native window out of fullscreen mode if it is currently in it.
+    let exitFullScreenChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.bridge_view.WindowControlApi.exitFullScreen\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      exitFullScreenChannel.setMessageHandler { _, reply in
+        do {
+          try api.exitFullScreen()
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      exitFullScreenChannel.setMessageHandler(nil)
     }
   }
 }

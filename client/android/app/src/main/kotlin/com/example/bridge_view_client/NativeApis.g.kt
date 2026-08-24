@@ -12,7 +12,7 @@ import io.flutter.plugin.common.StandardMethodCodec
 import io.flutter.plugin.common.StandardMessageCodec
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
-private object H264RendererPigeonUtils {
+private object NativeApisPigeonUtils {
 
   fun wrapResult(result: Any?): List<Any?> {
     return listOf(result)
@@ -46,7 +46,7 @@ class FlutterError (
   override val message: String? = null,
   val details: Any? = null
 ) : RuntimeException()
-private open class H264RendererPigeonCodec : StandardMessageCodec() {
+private open class NativeApisPigeonCodec : StandardMessageCodec() {
   override fun readValueOfType(type: Byte, buffer: ByteBuffer): Any? {
     return     super.readValueOfType(type, buffer)
   }
@@ -83,14 +83,14 @@ interface H264RendererApi {
   companion object {
     /** The codec used by H264RendererApi. */
     val codec: MessageCodec<Any?> by lazy {
-      H264RendererPigeonCodec()
+      NativeApisPigeonCodec()
     }
     /** Sets up an instance of `H264RendererApi` to handle messages through the `binaryMessenger`. */
     @JvmOverloads
     fun setUp(binaryMessenger: BinaryMessenger, api: H264RendererApi?, messageChannelSuffix: String = "") {
       val separatedMessageChannelSuffix = if (messageChannelSuffix.isNotEmpty()) ".$messageChannelSuffix" else ""
       run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.bridge_view_client.H264RendererApi.initialize$separatedMessageChannelSuffix", codec)
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.bridge_view.H264RendererApi.initialize$separatedMessageChannelSuffix", codec)
         if (api != null) {
           channel.setMessageHandler { message, reply ->
             val args = message as List<Any?>
@@ -99,7 +99,7 @@ interface H264RendererApi {
             val wrapped: List<Any?> = try {
               listOf(api.initialize(widthArg, heightArg))
             } catch (exception: Throwable) {
-              H264RendererPigeonUtils.wrapError(exception)
+              NativeApisPigeonUtils.wrapError(exception)
             }
             reply.reply(wrapped)
           }
@@ -108,7 +108,7 @@ interface H264RendererApi {
         }
       }
       run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.bridge_view_client.H264RendererApi.decodeFrame$separatedMessageChannelSuffix", codec)
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.bridge_view.H264RendererApi.decodeFrame$separatedMessageChannelSuffix", codec)
         if (api != null) {
           channel.setMessageHandler { message, reply ->
             val args = message as List<Any?>
@@ -118,7 +118,7 @@ interface H264RendererApi {
               api.decodeFrame(frameDataArg, isKeyframeArg)
               listOf(null)
             } catch (exception: Throwable) {
-              H264RendererPigeonUtils.wrapError(exception)
+              NativeApisPigeonUtils.wrapError(exception)
             }
             reply.reply(wrapped)
           }
@@ -127,14 +127,72 @@ interface H264RendererApi {
         }
       }
       run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.bridge_view_client.H264RendererApi.dispose$separatedMessageChannelSuffix", codec)
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.bridge_view.H264RendererApi.dispose$separatedMessageChannelSuffix", codec)
         if (api != null) {
           channel.setMessageHandler { _, reply ->
             val wrapped: List<Any?> = try {
               api.dispose()
               listOf(null)
             } catch (exception: Throwable) {
-              H264RendererPigeonUtils.wrapError(exception)
+              NativeApisPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+    }
+  }
+}
+/**
+ * Platform-channel bridge for native window management.
+ *
+ * macOS only: the Flutter window doesn't expose a way to enter/exit
+ * fullscreen from Dart, so this delegates to `NSWindow.toggleFullScreen`.
+ *
+ * Generated interface from Pigeon that represents a handler of messages from Flutter.
+ */
+interface WindowControlApi {
+  /** Puts the native window into fullscreen mode if it isn't already. */
+  fun enterFullScreen()
+  /** Takes the native window out of fullscreen mode if it is currently in it. */
+  fun exitFullScreen()
+
+  companion object {
+    /** The codec used by WindowControlApi. */
+    val codec: MessageCodec<Any?> by lazy {
+      NativeApisPigeonCodec()
+    }
+    /** Sets up an instance of `WindowControlApi` to handle messages through the `binaryMessenger`. */
+    @JvmOverloads
+    fun setUp(binaryMessenger: BinaryMessenger, api: WindowControlApi?, messageChannelSuffix: String = "") {
+      val separatedMessageChannelSuffix = if (messageChannelSuffix.isNotEmpty()) ".$messageChannelSuffix" else ""
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.bridge_view.WindowControlApi.enterFullScreen$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              api.enterFullScreen()
+              listOf(null)
+            } catch (exception: Throwable) {
+              NativeApisPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.bridge_view.WindowControlApi.exitFullScreen$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              api.exitFullScreen()
+              listOf(null)
+            } catch (exception: Throwable) {
+              NativeApisPigeonUtils.wrapError(exception)
             }
             reply.reply(wrapped)
           }
