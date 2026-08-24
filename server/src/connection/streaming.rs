@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 
 use crate::capture::SimpleCapture;
 use crate::encoder::{EncoderConfig, EncoderQuality, EncodingQueue, QueueConfig, QueuedFrame};
@@ -310,7 +310,7 @@ impl FrameStreamer {
                 let uptime = start_time.elapsed().as_secs_f64();
                 let active_clients = rt_handle.block_on(async { manager.client_count().await });
 
-                info!(
+                debug!(
                     "Streaming: {:.1}s uptime | {} captured, {} encoded, {} broadcast, {} dropped, {} errors | {} clients",
                     uptime, captured, encoded, broadcast, dropped, errors, active_clients
                 );

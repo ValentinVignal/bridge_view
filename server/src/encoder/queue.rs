@@ -1,4 +1,5 @@
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
+use log::debug;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
@@ -174,7 +175,7 @@ impl EncodingQueue {
                     let dropped = stats_clone.frames_dropped.load(Ordering::Relaxed);
                     let encoder_stats = encoder.stats();
 
-                    println!(
+                    debug!(
                         "Encoding Queue: {} queued, {} encoded, {} dropped, max queue: {}, avg encode: {:.2}ms",
                         queued,
                         encoded,
