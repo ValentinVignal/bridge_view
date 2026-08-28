@@ -258,11 +258,20 @@ Already connected: (none)
 
 ### Step 5.1: Display Configuration
 
-- [ ] Create virtual displays programmatically
-- [ ] Configure display positions (extend right/left)
-- [ ] Set custom resolutions based on client devices
-- [ ] Implement display arrangement UI/config
-- [ ] Handle dynamic client connections
+- [x] Create virtual displays programmatically
+- [x] Configure display positions (extend right/left)
+- [x] Set custom resolutions based on client devices
+- [x] Implement display arrangement UI/config
+- [x] Handle dynamic client connections
+
+**Implementation Details:**
+
+- Per `doc/virtual-display-research.md`, true virtual display creation isn't feasible for the MVP (requires a DriverKit driver); instead each client is assigned one of the Mac's currently _active_ displays (its own physical monitors, or dummy HDMI/USB-C plugs), and macOS's own arrangement (System Settings → Displays) determines left/right extension — the server just reads each display's real geometry
+- `ConnectionManager::pick_available_display()` picks a `CGDirectDisplayID` not already assigned to another connected client (falling back to the main display when no spare display is connected, e.g. local dev with a single Mac)
+- `ClientConnection::assigned_display_id` stores the picked display; freed automatically when the client is removed on disconnect/timeout
+- `ClientConnection::create_display_config()` now builds `DisplayConfig`/`DisplayPosition` from the assigned display's _real_ `CGDisplay::bounds()`, capped to the client's reported `max_width`/`max_height`/`max_framerate` capabilities (previously this was a synthetic index-based offset)
+- Replaced the single global `FrameStreamer` (which captured one display and broadcast identical frames to every client) with a new `StreamerPool` that subscribes to the manager's `registered:`/`disconnected:`/`timeout:` events and spins up one dedicated `FrameStreamer` per client, each capturing only that client's assigned display and sending frames only to that client (`ConnectionManager::send_frame`, replacing `broadcast_frame`)
+- Added a `displays` CLI command to list active macOS displays (id, resolution, position, main/extended) for arrangement visibility/debugging; `status` now also shows each client's assigned display id
 
 ### Step 5.2: Multi-Client Support
 

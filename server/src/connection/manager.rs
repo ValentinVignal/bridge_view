@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use log::{error, info, warn};
+use core_graphics::display::CGDisplay;
+use log::{info, warn};
 use prost::Message;
 use tokio::sync::{Mutex, broadcast, mpsc};
 
@@ -68,14 +69,23 @@ impl ConnectionManager {
         // Generate session ID
         let session_id = uuid::Uuid::new_v4().to_string();
 
-        // Determine display index (position in the lineup)
-        let display_index = clients.len();
+        // Pick a physical/dummy macOS display not already captured for another
+        // client (see doc/virtual-display-research.md — true virtual displays
+        // aren't feasible for the MVP, so we capture real connected displays).
+        let display_id = Self::pick_available_display(&clients);
+        let bounds = CGDisplay::new(display_id).bounds();
 
         // Create the client connection
         let mut client = ClientConnection::new(session_id.clone(), registration.clone());
+        client.assigned_display_id = display_id;
 
-        // Generate display configuration
-        let display_config = client.create_default_display_config(display_index);
+        // Generate display configuration from the assigned display's real geometry
+        let display_config = client.create_display_config(
+            bounds.origin.x as i32,
+            bounds.origin.y as i32,
+            bounds.size.width as u32,
+            bounds.size.height as u32,
+        );
         client.display_config = Some(display_config.clone());
         client.state = ClientState::Active;
 
@@ -91,6 +101,33 @@ impl ConnectionManager {
         let _ = self.event_sender.send(format!("registered:{}", session_id));
 
         Ok((session_id, display_config))
+    }
+
+    /// Pick a `CGDirectDisplayID` for a newly registered client: prefer an
+    /// active display not already assigned to another connected client,
+    /// falling back to the main display when no spare display is connected
+    /// (e.g. during local development with a single Mac).
+    fn pick_available_display(clients: &HashMap<String, ClientConnection>) -> u32 {
+        let used: std::collections::HashSet<u32> =
+            clients.values().map(|c| c.assigned_display_id).collect();
+        let main_id = CGDisplay::main().id;
+
+        if let Ok(active) = CGDisplay::active_displays() {
+            if let Some(&id) = active
+                .iter()
+                .find(|&&id| id != main_id && !used.contains(&id))
+            {
+                return id;
+            }
+        }
+
+        main_id
+    }
+
+    /// Get the `CGDirectDisplayID` assigned to a specific client session
+    pub async fn assigned_display(&self, session_id: &str) -> Option<u32> {
+        let clients = self.clients.lock().await;
+        clients.get(session_id).map(|c| c.assigned_display_id)
     }
 
     /// Handle a heartbeat from a client
@@ -183,12 +220,20 @@ impl ConnectionManager {
             .collect()
     }
 
-    /// Get a summary of all connected clients
-    pub async fn client_summary(&self) -> Vec<(String, String, ClientState)> {
+    /// Get a summary of all connected clients (session id, description,
+    /// state, and the `CGDirectDisplayID` captured for them)
+    pub async fn client_summary(&self) -> Vec<(String, String, ClientState, u32)> {
         let clients = self.clients.lock().await;
         clients
             .values()
-            .map(|c| (c.session_id.clone(), c.description(), c.state.clone()))
+            .map(|c| {
+                (
+                    c.session_id.clone(),
+                    c.description(),
+                    c.state.clone(),
+                    c.assigned_display_id,
+                )
+            })
             .collect()
     }
 
@@ -270,16 +315,17 @@ impl ConnectionManager {
         info!("Frame sender removed for session {}", session_id);
     }
 
-    /// Broadcast an encoded frame to all active clients.
-    /// Converts the EncodedFrame into a protobuf VideoFrame and sends to each client.
-    /// Returns the number of clients the frame was successfully sent to.
-    pub async fn broadcast_frame(
+    /// Send an encoded frame to a single client (each client has its own
+    /// dedicated capture/encode pipeline targeting its assigned display).
+    /// Converts the `EncodedFrame` into a protobuf `VideoFrame`.
+    /// Returns `true` if the frame was successfully delivered.
+    pub async fn send_frame(
         &self,
+        session_id: &str,
         encoded_frame: &EncodedFrame,
         width: u32,
         height: u32,
-    ) -> usize {
-        // Build the protobuf VideoFrame
+    ) -> bool {
         let video_frame = VideoFrame {
             sequence_number: encoded_frame.sequence,
             timestamp_us: encoded_frame.timestamp.elapsed().as_micros() as u64, // relative timestamp
@@ -295,55 +341,27 @@ impl ConnectionManager {
 
         let frame_bytes = video_frame.encode_to_vec();
 
-        let active_sessions = self.active_sessions().await;
-        let senders = self.frame_senders.lock().await;
-
-        let mut sent_count = 0;
-        let mut failed_sessions = Vec::new();
-
-        for session_id in &active_sessions {
-            if let Some(sender) = senders.get(session_id) {
-                match sender.send(frame_bytes.clone()) {
-                    Ok(_) => {
-                        sent_count += 1;
-                    }
-                    Err(_) => {
-                        // Channel closed — client disconnected
-                        warn!(
-                            "Failed to send frame to session {} (channel closed)",
-                            session_id
-                        );
-                        failed_sessions.push(session_id.clone());
-                    }
-                }
+        let sent = {
+            let senders = self.frame_senders.lock().await;
+            match senders.get(session_id) {
+                Some(sender) => sender.send(frame_bytes).is_ok(),
+                None => false,
             }
-        }
+        };
 
-        // Update frame counters for successfully sent frames
-        if sent_count > 0 {
-            let mut clients = self.clients.lock().await;
-            for session_id in &active_sessions {
-                if let Some(client) = clients.get_mut(session_id) {
-                    if !failed_sessions.contains(session_id) {
-                        client.frames_sent += 1;
-                    }
-                }
-            }
-        }
-
-        // Schedule cleanup of failed sessions (don't hold lock)
-        drop(senders);
-        for session_id in failed_sessions {
-            error!(
-                "Auto-disconnecting session {} due to send failure",
+        if sent {
+            self.record_frame_sent(session_id).await;
+        } else {
+            warn!(
+                "Failed to send frame to session {} (no sender or channel closed)",
                 session_id
             );
-            self.disconnect_client(&session_id, "Frame send failed — channel closed")
+            self.disconnect_client(session_id, "Frame send failed — channel closed")
                 .await
                 .ok();
-            self.remove_frame_sender(&session_id).await;
+            self.remove_frame_sender(session_id).await;
         }
 
-        sent_count
+        sent
     }
 }

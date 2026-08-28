@@ -1,6 +1,7 @@
 use std::io::Write;
 use std::sync::Arc;
 
+use core_graphics::display::CGDisplay;
 use log::info;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::oneshot;
@@ -59,6 +60,9 @@ pub async fn run_cli(manager: Arc<ConnectionManager>, shutdown_tx: oneshot::Send
                     },
                     "status" | "s" => {
                         do_status(&manager).await;
+                    }
+                    "displays" => {
+                        do_displays();
                     }
                     "kick" => match arg {
                         Some(session_id) => {
@@ -291,9 +295,36 @@ async fn do_status(manager: &ConnectionManager) {
     if summary.is_empty() {
         println!("No clients connected.");
     } else {
-        for (session_id, desc, state) in &summary {
-            println!("[{}]  {}  {}", session_id, desc, state);
+        for (session_id, desc, state, display_id) in &summary {
+            println!(
+                "[{}]  {}  {}  display={}",
+                session_id, desc, state, display_id
+            );
         }
+    }
+}
+
+fn do_displays() {
+    let main_id = CGDisplay::main().id;
+    match CGDisplay::active_displays() {
+        Ok(displays) => {
+            println!("Active displays ({}):", displays.len());
+            for id in displays {
+                let display = CGDisplay::new(id);
+                let bounds = display.bounds();
+                let tag = if id == main_id { "main" } else { "extended" };
+                println!(
+                    "  [{}] {}x{} at ({}, {})  ({})",
+                    id,
+                    bounds.size.width as u32,
+                    bounds.size.height as u32,
+                    bounds.origin.x as i32,
+                    bounds.origin.y as i32,
+                    tag
+                );
+            }
+        }
+        Err(e) => println!("Error listing displays: {:?}", e),
     }
 }
 
@@ -306,6 +337,7 @@ fn print_help() {
     println!("  detect              Scan for connectable devices (ADB + Thunderbolt)");
     println!("  assign <id>         Set up connection for a device from the detect list");
     println!("  status              Show currently connected clients and their state");
+    println!("  displays            List active macOS displays available for capture");
     println!("  kick <session_id>   Forcefully disconnect a client");
     println!("  help                Show this help message");
     println!("  quit                Stop the server gracefully");

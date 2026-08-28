@@ -86,17 +86,22 @@ pub struct StreamingStats {
     pub uptime_secs: f64,
 }
 
-/// Orchestrates the capture → encode → broadcast frame streaming pipeline.
+/// Orchestrates the capture → encode → send frame streaming pipeline for a
+/// single client.
 ///
-/// Runs asynchronously and captures display frames, encodes them with H.264,
-/// and broadcasts them to all active clients via the ConnectionManager.
+/// Runs asynchronously and captures frames from the client's assigned display,
+/// encodes them with H.264, and sends them to that one client via the
+/// ConnectionManager.
 pub struct FrameStreamer {
     /// Streaming configuration (FPS, display, quality, queue settings).
     /// Cloned into the background thread when `start()` is called.
     config: StreamingConfig,
-    /// Shared reference to the `ConnectionManager` used to broadcast
-    /// encoded frames to all active WebSocket clients.
+    /// Shared reference to the `ConnectionManager` used to deliver
+    /// encoded frames to the target client.
     manager: Arc<ConnectionManager>,
+    /// Session ID of the single client this streamer captures and sends
+    /// frames for.
+    target_session: String,
     /// Atomic flag shared with the background streaming thread.
     /// Set to `true` when the streamer starts; set to `false` to
     /// signal the loop to exit gracefully.
@@ -141,11 +146,12 @@ impl StreamingStatsAtomic {
 }
 
 impl FrameStreamer {
-    /// Create a new frame streamer
-    pub fn new(config: StreamingConfig, manager: Arc<ConnectionManager>) -> Self {
+    /// Create a new frame streamer targeting a single client session
+    pub fn new(config: StreamingConfig, manager: Arc<ConnectionManager>, target_session: String) -> Self {
         Self {
             config,
             manager,
+            target_session,
             running: Arc::new(AtomicBool::new(false)),
             stats: Arc::new(StreamingStatsAtomic::new()),
         }
@@ -165,19 +171,20 @@ impl FrameStreamer {
 
         let config = self.config.clone();
         let manager = self.manager.clone();
+        let target_session = self.target_session.clone();
         let stats = self.stats.clone();
 
-        // We need a separate tokio runtime handle to broadcast frames from
+        // We need a separate tokio runtime handle to send frames from
         // the background thread. The manager methods are async.
         let rt_handle = tokio::runtime::Handle::current();
 
         let join_handle = std::thread::spawn(move || {
-            Self::streaming_loop(config, manager, running, stats, rt_handle);
+            Self::streaming_loop(config, manager, target_session, running, stats, rt_handle);
         });
 
         info!(
-            "Frame streamer started ({}fps, display {})",
-            self.config.target_fps, self.config.display_id
+            "Frame streamer started for session {} ({}fps, display {})",
+            self.target_session, self.config.target_fps, self.config.display_id
         );
 
         StreamerHandle {
@@ -190,6 +197,7 @@ impl FrameStreamer {
     fn streaming_loop(
         config: StreamingConfig,
         manager: Arc<ConnectionManager>,
+        target_session: String,
         running: Arc<AtomicBool>,
         stats: Arc<StreamingStatsAtomic>,
         rt_handle: tokio::runtime::Handle,
@@ -231,8 +239,8 @@ impl FrameStreamer {
         let mut last_log_time = Instant::now();
 
         info!(
-            "Streaming loop started, target {:.0} fps",
-            config.target_fps
+            "Streaming loop started for session {}, target {:.0} fps",
+            target_session, config.target_fps
         );
 
         while running.load(Ordering::SeqCst) {
@@ -277,18 +285,17 @@ impl FrameStreamer {
                         let width = capture_width as u32;
                         let height = capture_height as u32;
                         let manager_ref = manager.clone();
+                        let session_ref = target_session.clone();
 
-                        // Broadcast via the tokio runtime
+                        // Send via the tokio runtime
                         let sent = rt_handle.block_on(async {
                             manager_ref
-                                .broadcast_frame(&encoded_frame, width, height)
+                                .send_frame(&session_ref, &encoded_frame, width, height)
                                 .await
                         });
 
-                        if sent > 0 {
-                            stats
-                                .frames_broadcast
-                                .fetch_add(sent as u64, Ordering::Relaxed);
+                        if sent {
+                            stats.frames_broadcast.fetch_add(1, Ordering::Relaxed);
                         }
                     }
                     Err(crossbeam_channel::TryRecvError::Empty) => break,
@@ -311,8 +318,8 @@ impl FrameStreamer {
                 let active_clients = rt_handle.block_on(async { manager.client_count().await });
 
                 debug!(
-                    "Streaming: {:.1}s uptime | {} captured, {} encoded, {} broadcast, {} dropped, {} errors | {} clients",
-                    uptime, captured, encoded, broadcast, dropped, errors, active_clients
+                    "Streaming [{}]: {:.1}s uptime | {} captured, {} encoded, {} sent, {} dropped, {} errors | {} total clients",
+                    target_session, uptime, captured, encoded, broadcast, dropped, errors, active_clients
                 );
                 last_log_time = Instant::now();
             }
@@ -326,7 +333,7 @@ impl FrameStreamer {
 
         // Shut down the encoding queue
         encoding_queue.stop();
-        info!("Streaming loop stopped");
+        info!("Streaming loop stopped for session {}", target_session);
     }
 
     /// Get current streaming statistics

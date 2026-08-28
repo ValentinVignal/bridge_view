@@ -10,7 +10,7 @@ mod proto;
 
 use capture::{CaptureConfig, DisplayCapture, SimpleCapture};
 use connection::{
-    ConnectionManager, FrameStreamer, ServerConfig, StreamingConfig, WebSocketServer, run_cli,
+    ConnectionManager, ServerConfig, StreamerPool, StreamingConfig, WebSocketServer, run_cli,
 };
 use encoder::{
     EncoderConfig, EncoderQuality, EncodingQueue, FrameEncoder, QueueConfig, QueuedFrame,
@@ -47,21 +47,23 @@ fn run_server() {
     let manager = Arc::new(ConnectionManager::new(config));
     let server = WebSocketServer::new(manager.clone());
 
-    // Configure frame streaming
-    let streaming_config = StreamingConfig::default();
-    println!("Streaming configuration:");
-    println!("  Target FPS: {}", streaming_config.target_fps);
-    println!("  Display ID: {}", streaming_config.display_id);
-    println!("  Max queue: {}", streaming_config.max_queue_size);
+    // Per-client streaming settings (fps, quality, queue behaviour). Each
+    // connected client gets its own capture/encode pipeline targeting its
+    // assigned display, spun up dynamically by the StreamerPool.
+    let streaming_template = StreamingConfig::default();
+    println!("Streaming configuration (per client):");
+    println!("  Target FPS: {}", streaming_template.target_fps);
+    println!("  Max queue: {}", streaming_template.max_queue_size);
     println!();
 
-    let streamer = FrameStreamer::new(streaming_config, manager.clone());
+    let streamer_pool = StreamerPool::new(manager.clone(), streaming_template);
 
     // Run the async server
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
     rt.block_on(async {
-        // Start the frame streaming pipeline (runs on a background thread)
-        let mut streamer_handle = streamer.start();
+        // Start watching for client registrations/disconnections and manage
+        // a dedicated FrameStreamer per client.
+        let pool_task = streamer_pool.clone().start();
 
         // Shutdown channel: the CLI sends () on `quit`; the server loop selects on it.
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
@@ -84,8 +86,9 @@ fn run_server() {
             }
         }
 
-        // Stop the frame streaming pipeline
-        streamer_handle.stop();
+        // Stop all per-client streaming pipelines
+        streamer_pool.stop_all().await;
+        pool_task.abort();
     });
 }
 

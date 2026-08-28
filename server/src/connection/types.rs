@@ -76,6 +76,10 @@ pub struct ClientConnection {
     pub state: ClientState,
     /// Display configuration assigned to this client
     pub display_config: Option<DisplayConfig>,
+    /// macOS `CGDirectDisplayID` of the physical/dummy display captured for
+    /// this client. Assigned by `ConnectionManager::register_client` from the
+    /// pool of active displays not already assigned to another client.
+    pub assigned_display_id: u32,
     /// Time the client connected
     pub connected_at: Instant,
     /// Time of last heartbeat received
@@ -93,6 +97,8 @@ impl ClientConnection {
             registration,
             state: ClientState::Registered,
             display_config: None,
+            // Placeholder — overwritten by `register_client` once a display is assigned.
+            assigned_display_id: 0,
             connected_at: now,
             last_heartbeat: now,
             frames_sent: 0,
@@ -121,26 +127,34 @@ impl ClientConnection {
         self.last_heartbeat = Instant::now();
     }
 
-    /// Create a default display config for this client based on its capabilities
-    pub fn create_default_display_config(&self, display_index: usize) -> DisplayConfig {
+    /// Build a display config for this client from the real geometry of its
+    /// assigned macOS display (`assigned_display_id`), capped to the client's
+    /// reported capabilities where provided.
+    pub fn create_display_config(
+        &self,
+        x_offset: i32,
+        y_offset: i32,
+        phys_width: u32,
+        phys_height: u32,
+    ) -> DisplayConfig {
         let (width, height) = self
             .registration
             .capabilities
             .as_ref()
             .map(|caps| {
                 let w = if caps.max_width > 0 {
-                    caps.max_width
+                    caps.max_width.min(phys_width)
                 } else {
-                    1920
+                    phys_width
                 };
                 let h = if caps.max_height > 0 {
-                    caps.max_height
+                    caps.max_height.min(phys_height)
                 } else {
-                    1080
+                    phys_height
                 };
                 (w, h)
             })
-            .unwrap_or((1920, 1080));
+            .unwrap_or((phys_width, phys_height));
 
         let framerate = self
             .registration
@@ -155,9 +169,6 @@ impl ClientConnection {
             })
             .unwrap_or(30);
 
-        // Position displays to the right of the main display
-        let x_offset = (display_index as i32 + 1) * width as i32;
-
         DisplayConfig {
             session_id: self.session_id.clone(),
             display_width: width,
@@ -166,7 +177,7 @@ impl ClientConnection {
             codec: VideoCodec::H264 as i32,
             position: Some(DisplayPosition {
                 x_offset,
-                y_offset: 0,
+                y_offset,
                 width,
                 height,
             }),
