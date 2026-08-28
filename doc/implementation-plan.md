@@ -275,11 +275,18 @@ Already connected: (none)
 
 ### Step 5.2: Multi-Client Support
 
-- [ ] Support 3 simultaneous clients
-- [ ] Assign unique display regions to each client
-- [ ] Handle client priority and ordering
-- [ ] Implement display re-arrangement
+- [x] Support 3 simultaneous clients
+- [x] Assign unique display regions to each client
+- [x] Handle client priority and ordering
+- [x] Implement display re-arrangement
 - [ ] Test with all devices connected
+
+**Implementation Details:**
+
+- `ServerConfig::max_clients` defaults to 3 and is enforced in `ConnectionManager::register_client()`; `StreamerPool` already spins up one dedicated `FrameStreamer` per connected client (from Step 5.1), so 3 clients each get their own capture/encode/send pipeline running concurrently
+- **Client priority and ordering**: added `sticky_assignments: HashMap<client_id, CGDirectDisplayID>` to `ConnectionManager`, keyed by the client's stable self-reported `client_id` (not the ephemeral `session_id`). `pick_available_display()` now prefers a client's previous display if it's still active and unclaimed, so reconnecting devices keep the same extended-display slot instead of being reshuffled to whatever's free. Updated on both initial registration and manual `set-display` reassignment
+- **Display re-arrangement**: `set-display <session_id> <display_id>` (added previously) reassigns one client to a free display. Added a new `swap-displays <session_id_a> <session_id_b>` CLI command + `ConnectionManager::swap_displays()` to atomically exchange displays between two already-connected clients — `reassign_display` alone can't do this since both target displays are already "taken" from each other's perspective
+- Remaining item is manual: physically connecting 2 phones + 1 macOS client simultaneously and verifying independent streams
 
 ---
 

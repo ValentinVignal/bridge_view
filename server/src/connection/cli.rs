@@ -72,6 +72,14 @@ pub async fn run_cli(manager: Arc<ConnectionManager>, shutdown_tx: oneshot::Send
                             println!("Usage: set-display <session_id> <display_id>");
                         }
                     },
+                    "swap-displays" => match parse_swap_displays_args(arg) {
+                        Some((session_a, session_b)) => {
+                            do_swap_displays(&manager, &session_a, &session_b).await;
+                        }
+                        None => {
+                            println!("Usage: swap-displays <session_id_a> <session_id_b>");
+                        }
+                    },
                     "kick" => match arg {
                         Some(session_id) => {
                             match manager
@@ -338,6 +346,31 @@ async fn do_set_display(manager: &Arc<ConnectionManager>, session_id: &str, disp
     }
 }
 
+/// Parse `"<session_id_a> <session_id_b>"` from the `swap-displays` argument string.
+fn parse_swap_displays_args(arg: Option<&str>) -> Option<(String, String)> {
+    let arg = arg?;
+    let mut parts = arg.splitn(2, ' ');
+    let session_a = parts.next()?.trim().to_string();
+    let session_b = parts.next()?.trim().to_string();
+    if session_a.is_empty() || session_b.is_empty() {
+        return None;
+    }
+    Some((session_a, session_b))
+}
+
+async fn do_swap_displays(manager: &Arc<ConnectionManager>, session_a: &str, session_b: &str) {
+    match manager.swap_displays(session_a, session_b).await {
+        Ok((config_a, config_b)) => {
+            manager.push_display_config(session_a, &config_a).await;
+            manager.push_display_config(session_b, &config_b).await;
+            manager.notify_display_changed(session_a);
+            manager.notify_display_changed(session_b);
+            println!("✓ Swapped displays between {} and {}", session_a, session_b);
+        }
+        Err(e) => println!("Error: {}", e),
+    }
+}
+
 fn do_displays() {
     let main_id = CGDisplay::main().id;
     match CGDisplay::active_displays() {
@@ -374,6 +407,8 @@ fn print_help() {
     println!("  displays            List active macOS displays available for capture");
     println!("  set-display <session_id> <display_id>");
     println!("                      Reassign a connected client to a different display");
+    println!("  swap-displays <session_id_a> <session_id_b>");
+    println!("                      Swap the displays of two connected clients");
     println!("  kick <session_id>   Forcefully disconnect a client");
     println!("  help                Show this help message");
     println!("  quit                Stop the server gracefully");

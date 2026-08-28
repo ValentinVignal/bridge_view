@@ -20,6 +20,11 @@ pub struct ConnectionManager {
     clients: Arc<Mutex<HashMap<String, ClientConnection>>>,
     /// Per-client frame senders for streaming encoded frames
     frame_senders: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<Vec<u8>>>>>,
+    /// Last display assigned to each `client_id` (stable across reconnects —
+    /// keyed by the client's self-reported id rather than the ephemeral
+    /// session id, so the same physical device keeps its extended-display
+    /// slot every time it registers).
+    sticky_assignments: Arc<Mutex<HashMap<String, u32>>>,
     /// Server configuration
     config: ServerConfig,
     /// Channel for broadcasting connection events
@@ -33,6 +38,7 @@ impl ConnectionManager {
         Self {
             clients: Arc::new(Mutex::new(HashMap::new())),
             frame_senders: Arc::new(Mutex::new(HashMap::new())),
+            sticky_assignments: Arc::new(Mutex::new(HashMap::new())),
             config,
             event_sender,
         }
@@ -75,7 +81,17 @@ impl ConnectionManager {
         // Pick a physical/dummy macOS display not already captured for another
         // client (see doc/virtual-display-research.md — true virtual displays
         // aren't feasible for the MVP, so we capture real connected displays).
-        let display_id = Self::pick_available_display(&clients);
+        // Prefer whatever display this `client_id` was assigned last time, so
+        // reconnecting devices keep a stable extended-display slot.
+        let preferred = {
+            let sticky = self.sticky_assignments.lock().await;
+            sticky.get(&registration.client_id).copied()
+        };
+        let display_id = Self::pick_available_display(&clients, preferred);
+        {
+            let mut sticky = self.sticky_assignments.lock().await;
+            sticky.insert(registration.client_id.clone(), display_id);
+        }
         let bounds = CGDisplay::new(display_id).bounds();
 
         // Create the client connection
@@ -106,16 +122,27 @@ impl ConnectionManager {
         Ok((session_id, display_config))
     }
 
-    /// Pick a `CGDirectDisplayID` for a newly registered client: prefer an
-    /// active display not already assigned to another connected client,
-    /// falling back to the main display when no spare display is connected
-    /// (e.g. during local development with a single Mac).
-    fn pick_available_display(clients: &HashMap<String, ClientConnection>) -> u32 {
+    /// Pick a `CGDirectDisplayID` for a newly registered client: prefer the
+    /// client's own previous assignment (`preferred`, from `sticky_assignments`)
+    /// when it's still active and free, otherwise fall back to any active
+    /// display not already assigned to another connected client, falling back
+    /// to the main display when no spare display is connected (e.g. during
+    /// local development with a single Mac).
+    fn pick_available_display(
+        clients: &HashMap<String, ClientConnection>,
+        preferred: Option<u32>,
+    ) -> u32 {
         let used: std::collections::HashSet<u32> =
             clients.values().map(|c| c.assigned_display_id).collect();
         let main_id = CGDisplay::main().id;
 
         if let Ok(active) = CGDisplay::active_displays() {
+            if let Some(preferred_id) = preferred {
+                if !used.contains(&preferred_id) && active.contains(&preferred_id) {
+                    return preferred_id;
+                }
+            }
+
             if let Some(&id) = active
                 .iter()
                 .find(|&&id| id != main_id && !used.contains(&id))
@@ -177,13 +204,85 @@ impl ConnectionManager {
         );
         client.assigned_display_id = display_id;
         client.display_config = Some(display_config.clone());
+        let client_id = client.registration.client_id.clone();
 
         info!(
             "Reassigned session {} to display {}",
             session_id, display_id
         );
 
+        drop(clients);
+        let mut sticky = self.sticky_assignments.lock().await;
+        sticky.insert(client_id, display_id);
+
         Ok(display_config)
+    }
+
+    /// Swap the displays captured for two already-connected clients.
+    ///
+    /// `reassign_display` alone can't rearrange two clients that are both
+    /// already occupying the two displays involved (each attempt is rejected
+    /// because the target display is "already assigned"), so this atomically
+    /// exchanges `assigned_display_id`/`display_config` between them instead.
+    /// Returns the new `(session_a, config_a, session_b, config_b)` configs;
+    /// callers must push both configs and call `notify_display_changed` for
+    /// both sessions.
+    pub async fn swap_displays(
+        &self,
+        session_a: &str,
+        session_b: &str,
+    ) -> Result<(DisplayConfig, DisplayConfig), String> {
+        if session_a == session_b {
+            return Err("Cannot swap a session with itself".to_string());
+        }
+
+        let mut clients = self.clients.lock().await;
+
+        let display_a = clients
+            .get(session_a)
+            .map(|c| c.assigned_display_id)
+            .ok_or_else(|| format!("Unknown session: {}", session_a))?;
+        let display_b = clients
+            .get(session_b)
+            .map(|c| c.assigned_display_id)
+            .ok_or_else(|| format!("Unknown session: {}", session_b))?;
+
+        let bounds_a = CGDisplay::new(display_b).bounds();
+        let bounds_b = CGDisplay::new(display_a).bounds();
+
+        let client_a = clients.get_mut(session_a).unwrap();
+        client_a.assigned_display_id = display_b;
+        let config_a = client_a.create_display_config(
+            bounds_a.origin.x as i32,
+            bounds_a.origin.y as i32,
+            bounds_a.size.width as u32,
+            bounds_a.size.height as u32,
+        );
+        client_a.display_config = Some(config_a.clone());
+        let client_id_a = client_a.registration.client_id.clone();
+
+        let client_b = clients.get_mut(session_b).unwrap();
+        client_b.assigned_display_id = display_a;
+        let config_b = client_b.create_display_config(
+            bounds_b.origin.x as i32,
+            bounds_b.origin.y as i32,
+            bounds_b.size.width as u32,
+            bounds_b.size.height as u32,
+        );
+        client_b.display_config = Some(config_b.clone());
+        let client_id_b = client_b.registration.client_id.clone();
+
+        info!(
+            "Swapped displays between session {} (now {}) and session {} (now {})",
+            session_a, display_b, session_b, display_a
+        );
+
+        drop(clients);
+        let mut sticky = self.sticky_assignments.lock().await;
+        sticky.insert(client_id_a, display_b);
+        sticky.insert(client_id_b, display_a);
+
+        Ok((config_a, config_b))
     }
 
     /// Push a `DisplayConfig` to a connected client outside of the initial
