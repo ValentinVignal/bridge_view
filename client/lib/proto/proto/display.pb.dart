@@ -752,6 +752,97 @@ class VideoFrame extends $pb.GeneratedMessage {
   void clearHeight() => $_clearField(6);
 }
 
+enum ServerPush_Payload { videoFrame, displayConfig, notSet }
+
+/// Asynchronous message pushed from server to client after registration.
+/// Sent unsolicited over the same channel used for video frames, so the
+/// client needs an envelope to tell frames apart from display reassignments.
+class ServerPush extends $pb.GeneratedMessage {
+  factory ServerPush({
+    VideoFrame? videoFrame,
+    DisplayConfig? displayConfig,
+  }) {
+    final result = create();
+    if (videoFrame != null) result.videoFrame = videoFrame;
+    if (displayConfig != null) result.displayConfig = displayConfig;
+    return result;
+  }
+
+  ServerPush._();
+
+  factory ServerPush.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ServerPush.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static const $core.Map<$core.int, ServerPush_Payload>
+      _ServerPush_PayloadByTag = {
+    1: ServerPush_Payload.videoFrame,
+    2: ServerPush_Payload.displayConfig,
+    0: ServerPush_Payload.notSet
+  };
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ServerPush',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'bridge_view'),
+      createEmptyInstance: create)
+    ..oo(0, [1, 2])
+    ..aOM<VideoFrame>(1, _omitFieldNames ? '' : 'videoFrame',
+        subBuilder: VideoFrame.create)
+    ..aOM<DisplayConfig>(2, _omitFieldNames ? '' : 'displayConfig',
+        subBuilder: DisplayConfig.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ServerPush clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ServerPush copyWith(void Function(ServerPush) updates) =>
+      super.copyWith((message) => updates(message as ServerPush)) as ServerPush;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ServerPush create() => ServerPush._();
+  @$core.override
+  ServerPush createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ServerPush getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ServerPush>(create);
+  static ServerPush? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  @$pb.TagNumber(2)
+  ServerPush_Payload whichPayload() =>
+      _ServerPush_PayloadByTag[$_whichOneof(0)]!;
+  @$pb.TagNumber(1)
+  @$pb.TagNumber(2)
+  void clearPayload() => $_clearField($_whichOneof(0));
+
+  @$pb.TagNumber(1)
+  VideoFrame get videoFrame => $_getN(0);
+  @$pb.TagNumber(1)
+  set videoFrame(VideoFrame value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasVideoFrame() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearVideoFrame() => $_clearField(1);
+  @$pb.TagNumber(1)
+  VideoFrame ensureVideoFrame() => $_ensure(0);
+
+  @$pb.TagNumber(2)
+  DisplayConfig get displayConfig => $_getN(1);
+  @$pb.TagNumber(2)
+  set displayConfig(DisplayConfig value) => $_setField(2, value);
+  @$pb.TagNumber(2)
+  $core.bool hasDisplayConfig() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearDisplayConfig() => $_clearField(2);
+  @$pb.TagNumber(2)
+  DisplayConfig ensureDisplayConfig() => $_ensure(1);
+}
+
 enum InputEvent_Event { mouse, keyboard, touch, notSet }
 
 /// Input event from client to server

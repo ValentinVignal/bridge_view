@@ -53,6 +53,10 @@ impl StreamerPool {
     async fn handle_event(&self, event: &str) {
         if let Some(session_id) = event.strip_prefix("registered:") {
             self.spawn_streamer(session_id).await;
+        } else if let Some(session_id) = event.strip_prefix("display_changed:") {
+            // Restart the streamer so it captures the newly assigned display.
+            self.stop_streamer(session_id).await;
+            self.spawn_streamer(session_id).await;
         } else if let Some(session_id) = event
             .strip_prefix("disconnected:")
             .or_else(|| event.strip_prefix("timeout:"))

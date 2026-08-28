@@ -155,10 +155,17 @@ class BridgeViewClient extends Notifier<BridgeViewClientState> {
 
   void _handleFrameOrControl(Uint8List bytes) {
     try {
-      final frame = VideoFrame.fromBuffer(bytes);
-      if (frame.hasFrameData() && frame.frameData.isNotEmpty) {
-        state = state.copyWith(framesReceived: state.framesReceived + 1);
-        _frameController.add(frame);
+      final push = ServerPush.fromBuffer(bytes);
+      if (push.hasVideoFrame()) {
+        final frame = push.videoFrame;
+        if (frame.hasFrameData() && frame.frameData.isNotEmpty) {
+          state = state.copyWith(framesReceived: state.framesReceived + 1);
+          _frameController.add(frame);
+        }
+        return;
+      }
+      if (push.hasDisplayConfig()) {
+        state = state.copyWith(displayConfig: push.displayConfig);
         return;
       }
     } catch (_) {}

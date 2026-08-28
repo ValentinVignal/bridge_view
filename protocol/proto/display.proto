@@ -112,6 +112,16 @@ enum FrameType {
   FRAME_TYPE_DELTA = 2;           // P-frame / delta frame
 }
 
+// Asynchronous message pushed from server to client after registration.
+// Sent unsolicited over the same channel used for video frames, so the
+// client needs an envelope to tell frames apart from display reassignments.
+message ServerPush {
+  oneof payload {
+    VideoFrame video_frame = 1;
+    DisplayConfig display_config = 2;
+  }
+}
+
 // Input event from client to server
 message InputEvent {
   string session_id = 1;          // Session identifier

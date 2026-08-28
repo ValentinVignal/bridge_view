@@ -376,6 +376,40 @@ final $typed_data.Uint8List videoFrameDescriptor = $convert.base64Decode(
     'cmFtZURhdGESNQoKZnJhbWVfdHlwZRgEIAEoDjIWLmJyaWRnZV92aWV3LkZyYW1lVHlwZVIJZn'
     'JhbWVUeXBlEhQKBXdpZHRoGAUgASgNUgV3aWR0aBIWCgZoZWlnaHQYBiABKA1SBmhlaWdodA==');
 
+@$core.Deprecated('Use serverPushDescriptor instead')
+const ServerPush$json = {
+  '1': 'ServerPush',
+  '2': [
+    {
+      '1': 'video_frame',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.bridge_view.VideoFrame',
+      '9': 0,
+      '10': 'videoFrame'
+    },
+    {
+      '1': 'display_config',
+      '3': 2,
+      '4': 1,
+      '5': 11,
+      '6': '.bridge_view.DisplayConfig',
+      '9': 0,
+      '10': 'displayConfig'
+    },
+  ],
+  '8': [
+    {'1': 'payload'},
+  ],
+};
+
+/// Descriptor for `ServerPush`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List serverPushDescriptor = $convert.base64Decode(
+    'CgpTZXJ2ZXJQdXNoEjoKC3ZpZGVvX2ZyYW1lGAEgASgLMhcuYnJpZGdlX3ZpZXcuVmlkZW9Gcm'
+    'FtZUgAUgp2aWRlb0ZyYW1lEkMKDmRpc3BsYXlfY29uZmlnGAIgASgLMhouYnJpZGdlX3ZpZXcu'
+    'RGlzcGxheUNvbmZpZ0gAUg1kaXNwbGF5Q29uZmlnQgkKB3BheWxvYWQ=');
+
 @$core.Deprecated('Use inputEventDescriptor instead')
 const InputEvent$json = {
   '1': 'InputEvent',

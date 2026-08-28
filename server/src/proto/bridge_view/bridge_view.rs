@@ -130,6 +130,24 @@ pub struct VideoFrame {
     #[prost(uint32, tag="6")]
     pub height: u32,
 }
+/// Asynchronous message pushed from server to client after registration.
+/// Sent unsolicited over the same channel used for video frames, so the
+/// client needs an envelope to tell frames apart from display reassignments.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ServerPush {
+    #[prost(oneof="server_push::Payload", tags="1, 2")]
+    pub payload: ::core::option::Option<server_push::Payload>,
+}
+/// Nested message and enum types in `ServerPush`.
+pub mod server_push {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Payload {
+        #[prost(message, tag="1")]
+        VideoFrame(super::VideoFrame),
+        #[prost(message, tag="2")]
+        DisplayConfig(super::DisplayConfig),
+    }
+}
 /// Input event from client to server
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InputEvent {

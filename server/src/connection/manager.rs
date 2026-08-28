@@ -7,7 +7,10 @@ use prost::Message;
 use tokio::sync::{Mutex, broadcast, mpsc};
 
 use crate::encoder::EncodedFrame;
-use crate::proto::{ClientRegistration, ControlMessageType, DisplayConfig, FrameType, VideoFrame};
+use crate::proto::{
+    ClientRegistration, ControlMessageType, DisplayConfig, FrameType, ServerPush, VideoFrame,
+    server_push,
+};
 
 use super::types::{ClientConnection, ClientState, ServerConfig};
 
@@ -128,6 +131,83 @@ impl ConnectionManager {
     pub async fn assigned_display(&self, session_id: &str) -> Option<u32> {
         let clients = self.clients.lock().await;
         clients.get(session_id).map(|c| c.assigned_display_id)
+    }
+
+    /// Reassign the macOS display captured for an already-connected client.
+    ///
+    /// Validates that `display_id` is currently active and not already
+    /// captured for a *different* client, then updates the client's
+    /// `assigned_display_id`/`display_config` and returns the new config.
+    /// Callers are responsible for pushing the config to the client (see
+    /// `push_display_config`) and restarting its `FrameStreamer` (see
+    /// `notify_display_changed`) — this only updates the manager's bookkeeping.
+    pub async fn reassign_display(
+        &self,
+        session_id: &str,
+        display_id: u32,
+    ) -> Result<DisplayConfig, String> {
+        let active = CGDisplay::active_displays()
+            .map_err(|e| format!("Failed to enumerate displays: {:?}", e))?;
+        if !active.contains(&display_id) {
+            return Err(format!("Display {} is not currently active", display_id));
+        }
+
+        let mut clients = self.clients.lock().await;
+
+        if let Some((other_session, _)) = clients
+            .iter()
+            .find(|(id, c)| id.as_str() != session_id && c.assigned_display_id == display_id)
+        {
+            return Err(format!(
+                "Display {} is already assigned to session {}",
+                display_id, other_session
+            ));
+        }
+
+        let client = clients
+            .get_mut(session_id)
+            .ok_or_else(|| format!("Unknown session: {}", session_id))?;
+
+        let bounds = CGDisplay::new(display_id).bounds();
+        let display_config = client.create_display_config(
+            bounds.origin.x as i32,
+            bounds.origin.y as i32,
+            bounds.size.width as u32,
+            bounds.size.height as u32,
+        );
+        client.assigned_display_id = display_id;
+        client.display_config = Some(display_config.clone());
+
+        info!(
+            "Reassigned session {} to display {}",
+            session_id, display_id
+        );
+
+        Ok(display_config)
+    }
+
+    /// Push a `DisplayConfig` to a connected client outside of the initial
+    /// registration handshake (e.g. after `reassign_display`). Returns
+    /// `true` if the config was successfully queued for delivery.
+    pub async fn push_display_config(&self, session_id: &str, config: &DisplayConfig) -> bool {
+        let push = ServerPush {
+            payload: Some(server_push::Payload::DisplayConfig(config.clone())),
+        };
+        let bytes = push.encode_to_vec();
+
+        let senders = self.frame_senders.lock().await;
+        match senders.get(session_id) {
+            Some(sender) => sender.send(bytes).is_ok(),
+            None => false,
+        }
+    }
+
+    /// Broadcast a `display_changed` event so the `StreamerPool` restarts
+    /// the streamer for this session against its newly assigned display.
+    pub fn notify_display_changed(&self, session_id: &str) {
+        let _ = self
+            .event_sender
+            .send(format!("display_changed:{}", session_id));
     }
 
     /// Handle a heartbeat from a client
@@ -339,7 +419,10 @@ impl ConnectionManager {
             height,
         };
 
-        let frame_bytes = video_frame.encode_to_vec();
+        let push = ServerPush {
+            payload: Some(server_push::Payload::VideoFrame(video_frame)),
+        };
+        let frame_bytes = push.encode_to_vec();
 
         let sent = {
             let senders = self.frame_senders.lock().await;

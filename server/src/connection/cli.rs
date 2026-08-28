@@ -64,6 +64,14 @@ pub async fn run_cli(manager: Arc<ConnectionManager>, shutdown_tx: oneshot::Send
                     "displays" => {
                         do_displays();
                     }
+                    "set-display" => match parse_set_display_args(arg) {
+                        Some((session_id, display_id)) => {
+                            do_set_display(&manager, &session_id, display_id).await;
+                        }
+                        None => {
+                            println!("Usage: set-display <session_id> <display_id>");
+                        }
+                    },
                     "kick" => match arg {
                         Some(session_id) => {
                             match manager
@@ -304,6 +312,32 @@ async fn do_status(manager: &ConnectionManager) {
     }
 }
 
+/// Parse `"<session_id> <display_id>"` from the `set-display` argument string.
+fn parse_set_display_args(arg: Option<&str>) -> Option<(String, u32)> {
+    let arg = arg?;
+    let mut parts = arg.splitn(2, ' ');
+    let session_id = parts.next()?.trim().to_string();
+    let display_id: u32 = parts.next()?.trim().parse().ok()?;
+    if session_id.is_empty() {
+        return None;
+    }
+    Some((session_id, display_id))
+}
+
+async fn do_set_display(manager: &Arc<ConnectionManager>, session_id: &str, display_id: u32) {
+    match manager.reassign_display(session_id, display_id).await {
+        Ok(config) => {
+            manager.push_display_config(session_id, &config).await;
+            manager.notify_display_changed(session_id);
+            println!(
+                "✓ Session {} reassigned to display {}",
+                session_id, display_id
+            );
+        }
+        Err(e) => println!("Error: {}", e),
+    }
+}
+
 fn do_displays() {
     let main_id = CGDisplay::main().id;
     match CGDisplay::active_displays() {
@@ -338,6 +372,8 @@ fn print_help() {
     println!("  assign <id>         Set up connection for a device from the detect list");
     println!("  status              Show currently connected clients and their state");
     println!("  displays            List active macOS displays available for capture");
+    println!("  set-display <session_id> <display_id>");
+    println!("                      Reassign a connected client to a different display");
     println!("  kick <session_id>   Forcefully disconnect a client");
     println!("  help                Show this help message");
     println!("  quit                Stop the server gracefully");
