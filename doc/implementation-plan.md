@@ -294,11 +294,24 @@ Already connected: (none)
 
 ### Step 6.1: Performance Optimization
 
-- [ ] Optimize encoding settings for low latency
+- [x] Optimize encoding settings for low latency
 - [ ] Implement adaptive bitrate based on connection
 - [ ] Reduce frame processing overhead
 - [ ] Optimize memory usage
 - [ ] Profile and fix bottlenecks
+
+**Implementation Details:**
+
+- `EncoderConfig::low_latency` (previously unused) now actually configures the underlying
+  OpenH264 encoder when `true`:
+  - `UsageType::ScreenContentRealTime` — tuned for sharp-edged screen content instead of camera video
+  - `RateControlMode::Bitrate` — keeps output close to the target bitrate instead of favoring quality
+  - `SpsPpsStrategy::ConstantId` and `enable_skip_frame(true)`
+  - `set_multiple_thread_idc(1)` — disables frame-level threading, which trades some throughput for
+    lower per-frame latency (no inter-frame buffering across encoder threads)
+- Replaced the hardcoded "keyframe every 30 frames" with a `gop_size` derived from the encoder's
+  configured `fps` (`H264Encoder::gop_size = fps.round().max(2)`), so the keyframe interval stays at
+  ~1 second regardless of the configured frame rate instead of assuming 30 fps
 
 ### Step 6.2: User Experience
 

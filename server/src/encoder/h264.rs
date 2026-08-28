@@ -1,5 +1,7 @@
 use openh264::OpenH264API;
-use openh264::encoder::{Encoder, EncoderConfig as OpenH264Config};
+use openh264::encoder::{
+    Encoder, EncoderConfig as OpenH264Config, RateControlMode, SpsPpsStrategy, UsageType,
+};
 use openh264::formats::YUVBuffer;
 use std::time::{Duration, Instant};
 
@@ -140,6 +142,8 @@ pub struct H264Encoder {
     encoder: Encoder,
     config: EncoderConfig,
     sequence: u64,
+    /// Number of frames between keyframes, derived from the configured fps
+    gop_size: u64,
     stats: EncoderStats,
 }
 
@@ -148,17 +152,33 @@ impl H264Encoder {
     pub fn new(config: EncoderConfig) -> Result<Self, String> {
         // Create encoder first with default config
         let api = OpenH264API::from_source();
-        let h264_config = OpenH264Config::new()
+        let mut h264_config = OpenH264Config::new()
             .set_bitrate_bps(config.quality.target_bitrate(config.width, config.height))
             .max_frame_rate(config.fps as f32);
 
+        if config.low_latency {
+            h264_config = h264_config
+                // Screen content (sharp edges, text) rather than camera video
+                .usage_type(UsageType::ScreenContentRealTime)
+                // Keep output size close to target bitrate instead of prioritizing quality
+                .rate_control_mode(RateControlMode::Bitrate)
+                .sps_pps_strategy(SpsPpsStrategy::ConstantId)
+                .enable_skip_frame(true)
+                // Disable frame-level threading, which trades latency for throughput
+                .set_multiple_thread_idc(1);
+        }
+
         let encoder = Encoder::with_api_config(api, h264_config)
             .map_err(|e| format!("Failed to create encoder: {:?}", e))?;
+
+        // One keyframe per second by default, minimum every 2 frames
+        let gop_size = (config.fps.round() as u64).max(2);
 
         Ok(Self {
             encoder,
             config,
             sequence: 0,
+            gop_size,
             stats: EncoderStats::default(),
         })
     }
@@ -236,8 +256,8 @@ impl FrameEncoder for H264Encoder {
         // Convert bitstream to vec
         let data = bitstream.to_vec();
 
-        // Check if this is a keyframe (first frame or every N frames)
-        let is_keyframe = self.sequence == 1 || self.sequence % 30 == 0;
+        // Check if this is a keyframe (first frame or every gop_size frames)
+        let is_keyframe = self.sequence == 1 || self.sequence % self.gop_size == 0;
 
         // Update statistics
         self.stats.total_frames += 1;
@@ -279,8 +299,8 @@ impl FrameEncoder for H264Encoder {
         // Convert bitstream to vec
         let data = bitstream.to_vec();
 
-        // Check if this is a keyframe (first frame or every N frames)
-        let is_keyframe = self.sequence == 1 || self.sequence % 30 == 0;
+        // Check if this is a keyframe (first frame or every gop_size frames)
+        let is_keyframe = self.sequence == 1 || self.sequence % self.gop_size == 0;
 
         // Update statistics
         self.stats.total_frames += 1;
