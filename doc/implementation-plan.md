@@ -327,6 +327,11 @@ Already connected: (none)
 - [ ] Display settings (brightness, orientation)
 - [ ] Multiple encoding quality presets
 - [ ] Wireless fallback (WiFi)
+- [ ] Cursor rendering: `CGDisplayCreateImage` (used by `SimpleCapture`) does not
+      include the mouse cursor in captured frames, so it's currently invisible
+      on clients. Either switch capture to `ScreenCaptureKit`
+      (`SCStreamConfiguration.showsCursor`) or track cursor position/image
+      separately on the server and composite it client-side.
 
 ### Step 7.2: Production Readiness
 
